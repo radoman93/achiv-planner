@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+npm-debug.log*
+
+# OS / editors
+.DS_Store
+Thumbs.db
+
+# Raw scraped content
+raw_storage/
+
+# Celery Beat runtime state
+celerybeat-schedule
+celerybeat-schedule.*
+
+# SSL
+nginx/ssl/*.pem

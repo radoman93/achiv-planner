@@ -1,0 +1,44 @@
+# Dev override: hot reload, direct port access, no nginx.
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+
+  redis:
+    ports:
+      - "6379:6379"
+
+  backend:
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - raw_storage:/raw_storage
+
+  celery-worker:
+    volumes:
+      - ./backend:/app
+      - raw_storage:/raw_storage
+
+  celery-beat:
+    volumes:
+      - ./backend:/app
+
+  flower:
+    ports:
+      - "5555:5555"
+    volumes:
+      - ./backend:/app
+
+  frontend:
+    command: npm run dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+
+  nginx:
+    profiles: ["disabled"]
