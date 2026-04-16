@@ -52,7 +52,9 @@ app.include_router(health_router, prefix="/api")
 from app.api.auth import router as auth_router  # noqa: E402
 from app.api.auth_battlenet import router as auth_bnet_router  # noqa: E402
 from app.api.pipeline import router as pipeline_router  # noqa: E402
+from app.api.dashboard import router as dashboard_router  # noqa: E402
 
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(auth_bnet_router, prefix="/api/auth", tags=["auth"])
 app.include_router(pipeline_router, prefix="/api/pipeline", tags=["pipeline"])
+app.include_router(dashboard_router, prefix="/api/dashboard", tags=["dashboard"])
