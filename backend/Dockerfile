@@ -10,6 +10,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install Playwright Chromium + OS deps for Wowhead scraping
+RUN playwright install --with-deps chromium
+
 COPY . .
 
 EXPOSE 8000
