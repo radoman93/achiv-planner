@@ -25,8 +25,15 @@ async def debug_comments(achievement_id: int):
         try:
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
             await page.wait_for_selector("#main-contents", timeout=15000)
-            # Wait extra for comments to load
-            await page.wait_for_timeout(3000)
+            # Click the comments tab to load them
+            try:
+                tab = await page.query_selector('#tab-comments, a[href="#comments"]')
+                if tab:
+                    await tab.click()
+                    await page.wait_for_timeout(4000)
+            except Exception:
+                pass
+            await page.wait_for_timeout(2000)
 
             # Try many possible comment selectors
             selectors = [
@@ -39,6 +46,12 @@ async def debug_comments(achievement_id: int):
                 count = len(await page.query_selector_all(sel))
                 if count > 0:
                     result["comment_selectors_found"][sel] = count
+
+            # Re-check selectors after clicking tab
+            for sel in selectors:
+                count = len(await page.query_selector_all(sel))
+                if count > 0:
+                    result["comment_selectors_found"][sel + " (after click)"] = count
 
             # Get the comments tab/section HTML
             comments_section = await page.query_selector("#tab-comments, #comments, .comment-list, .commentlist")
