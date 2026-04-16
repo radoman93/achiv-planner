@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse, JSONResponse
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, text, distinct, case, literal_column
 
 from app.core.database import AsyncSessionLocal
 from app.models.achievement import Achievement
@@ -8,6 +8,93 @@ from app.models.content import Comment, Guide
 from app.models.pipeline import PipelineRun
 
 router = APIRouter()
+
+
+@router.get("/scrape-status")
+async def scrape_status():
+    """Detailed scrape coverage: how many achievements have raw HTML, comments, etc."""
+    async with AsyncSessionLocal() as session:
+        total_achievements = (await session.execute(select(func.count(Achievement.id)))).scalar() or 0
+        total_comments = (await session.execute(select(func.count(Comment.id)))).scalar() or 0
+        total_guides = (await session.execute(select(func.count(Guide.id)))).scalar() or 0
+
+        # Achievements with at least one comment
+        achs_with_comments = (await session.execute(
+            select(func.count(distinct(Comment.achievement_id)))
+        )).scalar() or 0
+
+        # Comment stats
+        comment_stats = (await session.execute(
+            select(
+                func.min(Comment.upvotes),
+                func.max(Comment.upvotes),
+                func.avg(Comment.upvotes),
+            )
+        )).one()
+
+        # Processed vs unprocessed comments
+        processed = (await session.execute(
+            select(func.count(Comment.id)).where(Comment.is_processed == True)
+        )).scalar() or 0
+        unprocessed = (await session.execute(
+            select(func.count(Comment.id)).where(Comment.is_processed == False)
+        )).scalar() or 0
+
+        # Contradictory comments
+        contradictory = (await session.execute(
+            select(func.count(Comment.id)).where(Comment.is_contradictory == True)
+        )).scalar() or 0
+
+        # Comments per achievement distribution (top 10)
+        comments_per_ach = (await session.execute(
+            select(
+                Achievement.name,
+                Achievement.blizzard_id,
+                func.count(Comment.id).label("cnt"),
+            )
+            .join(Comment, Comment.achievement_id == Achievement.id)
+            .group_by(Achievement.id, Achievement.name, Achievement.blizzard_id)
+            .order_by(func.count(Comment.id).desc())
+            .limit(10)
+        )).all()
+
+        # Check raw storage files via DB (pipeline_runs)
+        pipeline_runs = (await session.execute(
+            select(PipelineRun.id, PipelineRun.started_at, PipelineRun.completed_at,
+                   PipelineRun.achievements_processed, PipelineRun.achievements_errored)
+            .order_by(PipelineRun.created_at.desc())
+            .limit(5)
+        )).all()
+
+    return JSONResponse({
+        "total_achievements": total_achievements,
+        "total_comments": total_comments,
+        "total_guides": total_guides,
+        "achievements_with_comments": achs_with_comments,
+        "achievements_without_comments": total_achievements - achs_with_comments,
+        "comment_stats": {
+            "min_upvotes": comment_stats[0],
+            "max_upvotes": comment_stats[1],
+            "avg_upvotes": round(float(comment_stats[2] or 0), 1),
+            "processed": processed,
+            "unprocessed": unprocessed,
+            "contradictory": contradictory,
+        },
+        "top_commented_achievements": [
+            {"name": r[0], "blizzard_id": r[1], "comment_count": r[2]}
+            for r in comments_per_ach
+        ],
+        "recent_pipeline_runs": [
+            {
+                "id": str(r[0]),
+                "started_at": r[1].isoformat() if r[1] else None,
+                "completed_at": r[2].isoformat() if r[2] else None,
+                "achievements_processed": r[3],
+                "achievements_errored": r[4],
+            }
+            for r in pipeline_runs
+        ],
+    })
 
 
 @router.get("/stats")
