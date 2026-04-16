@@ -244,29 +244,28 @@ def _parse_html(achievement_id: int, html: str, url: str) -> WowheadAchievementD
 
 async def _extract_comments(page) -> list[CommentData]:
     comments: list[CommentData] = []
-    # Click through "Load more" style pagination a bounded number of times
-    for _ in range(20):
-        load_more = await page.query_selector('a.comment-load-more, button.comment-load-more')
-        if not load_more:
-            break
-        try:
-            await load_more.click()
-            await page.wait_for_timeout(1200)
-        except Exception:
-            break
 
-    elements = await page.query_selector_all(".comment, .comments-comment")
+    # Wowhead uses .comment as individual comment wrappers
+    # with .comment-body for text, .comment-author for author,
+    # .rating for vote count, and date in .comment-header <a> tags
+    elements = await page.query_selector_all(".comment")
     for el in elements:
         try:
-            text_el = await el.query_selector(".comment-body, .comments-comment-body")
+            text_el = await el.query_selector(".comment-body")
             text = (await text_el.inner_text()).strip() if text_el else ""
-            author_el = await el.query_selector(".comment-author, .comments-comment-author")
+            author_el = await el.query_selector(".comment-author a")
             author = (await author_el.inner_text()).strip() if author_el else None
-            date_el = await el.query_selector(".comment-date, time")
-            date = (await date_el.get_attribute("datetime")) if date_el else None
-            if not date and date_el:
-                date = (await date_el.inner_text()).strip()
-            rating_el = await el.query_selector(".comment-rating, .rating")
+            # Date is in a link like "on 2008/09/15" inside .comment-header
+            date = None
+            date_el = await el.query_selector(".comment-header a[href*='comments:id=']")
+            if date_el:
+                date_text = (await date_el.inner_text()).strip()
+                # Extract "2008/09/15" from "on 2008/09/15"
+                if "on " in date_text:
+                    date = date_text.split("on ")[-1].split(" ")[0]
+                else:
+                    date = date_text
+            rating_el = await el.query_selector(".rating")
             rating_txt = (await rating_el.inner_text()).strip() if rating_el else "0"
             try:
                 upvotes = int("".join(c for c in rating_txt if c.isdigit() or c == "-") or 0)
@@ -404,6 +403,13 @@ async def _scrape_standalone(achievement_id: int) -> Optional[WowheadAchievement
             )
 
             data = _parse_html(achievement_id, html, url)
+
+            # Navigate to #comments to load the comments section
+            try:
+                await page.goto(f"{url}#comments", wait_until="domcontentloaded", timeout=15000)
+                await page.wait_for_selector(".comment-body", timeout=8000)
+            except Exception:
+                pass  # Comments may not exist for this achievement
             data.comments = await _extract_comments(page)
             return data
         finally:
