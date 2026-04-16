@@ -398,10 +398,9 @@ async def _scrape_standalone(achievement_id: int) -> Optional[WowheadAchievement
 
             raw_storage.store_raw(
                 source="wowhead",
-                achievement_id=achievement_id,
+                achievement_id=str(achievement_id),
                 content=html,
-                url=url,
-                confidence_base=0.85,
+                metadata={"url": url, "confidence_base": 0.85},
             )
 
             data = _parse_html(achievement_id, html, url)
