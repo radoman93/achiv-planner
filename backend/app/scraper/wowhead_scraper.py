@@ -348,6 +348,71 @@ async def scrape_achievement(achievement_id: int) -> Optional[WowheadAchievement
             await page.close()
 
 
+# ---- Standalone scraper for Celery tasks (no shared pool) ----
+
+async def _scrape_standalone(achievement_id: int) -> Optional[WowheadAchievementData]:
+    """Self-contained scraper that creates its own Playwright browser.
+
+    The global BrowserPool uses asyncio primitives bound to a specific
+    event loop, which breaks when asyncio.run() is called from separate
+    Celery tasks. This function creates a fresh browser per call.
+    """
+    if await _check_cloudflare_pause():
+        logger.warning("wowhead.scrape_skipped_cloudflare_pause", achievement_id=achievement_id)
+        return None
+
+    url = f"https://www.wowhead.com/achievement={achievement_id}"
+    await asyncio.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
+
+    from playwright.async_api import async_playwright
+
+    async with async_playwright() as pw:
+        browser = await pw.chromium.launch(headless=True)
+        context = await browser.new_context(
+            user_agent=random.choice(USER_AGENTS),
+            viewport=random.choice(VIEWPORTS),
+        )
+        page = await context.new_page()
+        try:
+            try:
+                await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                await page.wait_for_selector("#main-contents", timeout=15000)
+            except Exception as exc:
+                logger.warning("wowhead.timeout", achievement_id=achievement_id, error=str(exc))
+                html = await page.content()
+                if _is_cloudflare_challenge(html):
+                    await _record_cloudflare_block()
+                    logger.warning("wowhead.cloudflare_blocked", achievement_id=achievement_id)
+                    return None
+                data = WowheadAchievementData(achievement_id=achievement_id)
+                data.scrape_status = "timeout"
+                return data
+
+            html = await page.content()
+            if _is_cloudflare_challenge(html):
+                await _record_cloudflare_block()
+                logger.warning("wowhead.cloudflare_blocked", achievement_id=achievement_id)
+                return None
+
+            await _reset_cloudflare_counter()
+
+            raw_storage.store_raw(
+                source="wowhead",
+                achievement_id=achievement_id,
+                content=html,
+                url=url,
+                confidence_base=0.85,
+            )
+
+            data = _parse_html(achievement_id, html, url)
+            data.comments = await _extract_comments(page)
+            return data
+        finally:
+            await page.close()
+            await context.close()
+            await browser.close()
+
+
 # ---- Celery task wrapper ----
 
 @celery_app.task(
@@ -360,7 +425,7 @@ async def scrape_achievement(achievement_id: int) -> Optional[WowheadAchievement
 def scrape_wowhead_task(self, achievement_id: int) -> dict:
     """Celery sync wrapper around the async scraper."""
     try:
-        result = asyncio.run(scrape_achievement(achievement_id))
+        result = asyncio.run(_scrape_standalone(achievement_id))
     except Exception as exc:
         logger.exception("wowhead.scrape_task_error", achievement_id=achievement_id)
         raise self.retry(exc=exc)
