@@ -90,11 +90,18 @@ async def _dispatch_scrapes(
     achievements = list(q.scalars().all())
     dispatched: list[str] = []
     skipped = 0
+    from datetime import datetime, timezone, timedelta
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=720)
+
     for ach in achievements:
-        ach_id_str = str(ach.blizzard_id)
-        if not force_rescrape and raw_storage.raw_exists("wowhead", ach_id_str, max_age_hours=720):
-            skipped += 1
-            continue
+        if not force_rescrape:
+            # Prefer DB-based tracking, fall back to filesystem
+            if ach.last_scraped_at and ach.last_scraped_at > cutoff:
+                skipped += 1
+                continue
+            if not ach.last_scraped_at and raw_storage.raw_exists("wowhead", str(ach.blizzard_id), max_age_hours=720):
+                skipped += 1
+                continue
 
         queue_name = (
             "high_priority" if (ach.staleness_score or 0.0) > 0.8 else "normal"

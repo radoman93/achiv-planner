@@ -161,9 +161,9 @@ async def _record_cloudflare_block() -> None:
     try:
         count = await r.incr(CLOUDFLARE_BLOCK_COUNTER_KEY)
         await r.expire(CLOUDFLARE_BLOCK_COUNTER_KEY, 600)
-        if count >= 5:
-            until = time.time() + 3600
-            await r.set(CLOUDFLARE_PAUSE_KEY, str(until), ex=3600)
+        if count >= 3:
+            until = time.time() + 600
+            await r.set(CLOUDFLARE_PAUSE_KEY, str(until), ex=600)
             await r.delete(CLOUDFLARE_BLOCK_COUNTER_KEY)
             logger.critical("wowhead.cloudflare_pause_triggered", until=until)
     finally:
@@ -424,8 +424,10 @@ async def _scrape_standalone(achievement_id: int) -> Optional[WowheadAchievement
     name="pipeline.scrape.wowhead",
     queue="normal",
     bind=True,
-    max_retries=3,
-    default_retry_delay=86400,
+    max_retries=5,
+    default_retry_delay=300,
+    retry_backoff=True,
+    retry_backoff_max=3600,
 )
 def scrape_wowhead_task(self, achievement_id: int) -> dict:
     """Celery sync wrapper around the async scraper."""
@@ -438,18 +440,23 @@ def scrape_wowhead_task(self, achievement_id: int) -> dict:
     if result is None:
         return {"achievement_id": achievement_id, "status": "skipped_or_not_found"}
 
-    # Look up the DB UUID from blizzard_id for downstream tasks
-    async def _get_uuid():
+    # Look up the DB UUID and mark as scraped
+    async def _get_uuid_and_mark():
         from sqlalchemy import select as sa_select
         from app.core.database import AsyncSessionLocal
         from app.models.achievement import Achievement
+        from datetime import datetime, timezone
         async with AsyncSessionLocal() as session:
-            row = (await session.execute(
-                sa_select(Achievement.id).where(Achievement.blizzard_id == achievement_id)
+            ach = (await session.execute(
+                sa_select(Achievement).where(Achievement.blizzard_id == achievement_id)
             )).scalar_one_or_none()
-            return str(row) if row else None
+            if ach is None:
+                return None
+            ach.last_scraped_at = datetime.now(timezone.utc)
+            await session.commit()
+            return str(ach.id)
 
-    ach_uuid = asyncio.run(_get_uuid())
+    ach_uuid = asyncio.run(_get_uuid_and_mark())
 
     # Save extracted comments to database
     if ach_uuid and result.comments:

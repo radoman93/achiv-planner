@@ -32,6 +32,63 @@ async def clear_and_rescrape():
     return JSONResponse({"task_id": result.id, "status": "queue_cleared_and_rescrape_triggered"})
 
 
+@router.post("/trigger/enrich-samples")
+async def trigger_enrich_samples():
+    """Directly trigger LLM enrichment for the sample achievement IDs."""
+    from sqlalchemy import select as sa_select
+    from app.core.database import AsyncSessionLocal
+    from app.models.achievement import Achievement
+    from app.core.config import settings
+
+    sample_blizzard_ids = [int(x.strip()) for x in (settings.LLM_SAMPLE_IDS or "").split(",") if x.strip()]
+    dispatched = []
+
+    async with AsyncSessionLocal() as session:
+        for bid in sample_blizzard_ids:
+            row = (await session.execute(
+                sa_select(Achievement.id).where(Achievement.blizzard_id == bid)
+            )).scalar_one_or_none()
+            if row:
+                celery_app.send_task(
+                    "pipeline.llm.enrich",
+                    args=[str(row)],
+                    queue="llm_enrichment",
+                )
+                dispatched.append({"blizzard_id": bid, "uuid": str(row)})
+
+    return JSONResponse({"dispatched": dispatched, "count": len(dispatched)})
+
+
+@router.post("/trigger/rescrape-failed")
+async def trigger_rescrape_failed():
+    """Dispatch Wowhead scrapes for achievements that were never successfully scraped."""
+    from sqlalchemy import select as sa_select
+    from app.core.database import AsyncSessionLocal
+    from app.models.achievement import Achievement
+
+    async with AsyncSessionLocal() as session:
+        rows = (await session.execute(
+            sa_select(Achievement.blizzard_id)
+            .where(Achievement.last_scraped_at.is_(None))
+            .where(Achievement.is_legacy == False)
+        )).scalars().all()
+
+    dispatched = 0
+    for bid in rows:
+        celery_app.send_task(
+            "pipeline.scrape.wowhead",
+            args=[bid],
+            queue="normal",
+        )
+        dispatched += 1
+
+    return JSONResponse({
+        "dispatched": dispatched,
+        "total_unscraped": len(rows),
+        "status": "rescrape_triggered",
+    })
+
+
 @router.get("/task/{task_id}")
 async def get_task_status(task_id: str):
     result = celery_app.AsyncResult(task_id)

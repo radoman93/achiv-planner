@@ -32,6 +32,12 @@ async def scrape_status():
             )
         )).one()
 
+        # Scraped vs unscraped achievements
+        scraped = (await session.execute(
+            select(func.count(Achievement.id)).where(Achievement.last_scraped_at.isnot(None))
+        )).scalar() or 0
+        unscraped = total_achievements - scraped
+
         # Processed vs unprocessed comments
         processed = (await session.execute(
             select(func.count(Comment.id)).where(Comment.is_processed == True)
@@ -70,6 +76,8 @@ async def scrape_status():
         "total_achievements": total_achievements,
         "total_comments": total_comments,
         "total_guides": total_guides,
+        "achievements_scraped": scraped,
+        "achievements_unscraped": unscraped,
         "achievements_with_comments": achs_with_comments,
         "achievements_without_comments": total_achievements - achs_with_comments,
         "comment_stats": {
