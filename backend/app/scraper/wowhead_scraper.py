@@ -450,6 +450,36 @@ def scrape_wowhead_task(self, achievement_id: int) -> dict:
             return str(row) if row else None
 
     ach_uuid = asyncio.run(_get_uuid())
+
+    # Save extracted comments to database
+    if ach_uuid and result.comments:
+        async def _save_comments():
+            from app.core.database import AsyncSessionLocal
+            from app.models.content import Comment
+            from datetime import datetime, timezone
+            from uuid import UUID as PyUUID
+
+            async with AsyncSessionLocal() as session:
+                uid = PyUUID(ach_uuid)
+                for cd in result.comments:
+                    comment_date = None
+                    if cd.date:
+                        try:
+                            comment_date = datetime.strptime(cd.date, "%Y/%m/%d").replace(tzinfo=timezone.utc)
+                        except ValueError:
+                            pass
+                    session.add(Comment(
+                        achievement_id=uid,
+                        raw_text=cd.text,
+                        author=cd.author,
+                        comment_date=comment_date,
+                        upvotes=cd.upvotes,
+                        source_url=f"https://www.wowhead.com/achievement={achievement_id}#comments",
+                    ))
+                await session.commit()
+
+        asyncio.run(_save_comments())
+
     if ach_uuid:
         celery_app.send_task(
             "pipeline.comments.process",
