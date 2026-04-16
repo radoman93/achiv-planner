@@ -5,19 +5,41 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.core.config import settings
 
-engine = create_async_engine(
-    settings.DATABASE_URL,
-    echo=False,
-    future=True,
-    pool_pre_ping=True,
-)
 
-AsyncSessionLocal = async_sessionmaker(
-    bind=engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-    autoflush=False,
-)
+def _make_engine():
+    """Create a fresh async engine safe for the current event loop."""
+    return create_async_engine(
+        settings.DATABASE_URL,
+        echo=False,
+        future=True,
+        pool_pre_ping=False,
+        pool_size=5,
+        max_overflow=10,
+        pool_recycle=300,
+    )
+
+
+class _SessionFactory:
+    """Session factory that creates a fresh engine per event loop.
+
+    asyncpg connection pools are bound to the event loop where they
+    were created. Celery tasks call asyncio.run() which creates a new
+    loop each time. This factory creates a fresh engine (and pool)
+    on every call, so sessions always work in the current loop.
+    """
+
+    def __call__(self) -> AsyncSession:
+        eng = _make_engine()
+        factory = async_sessionmaker(
+            bind=eng,
+            class_=AsyncSession,
+            expire_on_commit=False,
+            autoflush=False,
+        )
+        return factory()
+
+
+AsyncSessionLocal = _SessionFactory()
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -30,8 +52,10 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 async def check_db_health() -> bool:
     try:
-        async with engine.connect() as conn:
+        eng = _make_engine()
+        async with eng.connect() as conn:
             await conn.execute(text("SELECT 1"))
+        await eng.dispose()
         return True
     except Exception:
         return False
