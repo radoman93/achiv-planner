@@ -76,6 +76,8 @@ services:
         condition: service_healthy
     volumes:
       - raw_storage:/raw_storage
+    ports:
+      - "8080:8000"
     networks:
       - wow_optimizer_network
 
