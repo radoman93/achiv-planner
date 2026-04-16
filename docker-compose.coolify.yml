@@ -149,6 +149,8 @@ services:
       --port=5555
       --basic_auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD}
     environment:
+      DATABASE_URL: postgresql+asyncpg://wow:${POSTGRES_PASSWORD}@postgres:5432/wow_optimizer
+      REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
     depends_on:
