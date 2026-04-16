@@ -432,12 +432,25 @@ def scrape_wowhead_task(self, achievement_id: int) -> dict:
     if result is None:
         return {"achievement_id": achievement_id, "status": "skipped_or_not_found"}
 
-    # Chain: trigger comment processing
-    celery_app.send_task(
-        "pipeline.comments.process",
-        args=[str(achievement_id)],
-        queue="normal",
-    )
+    # Look up the DB UUID from blizzard_id for downstream tasks
+    async def _get_uuid():
+        from sqlalchemy import select as sa_select
+        from app.core.database import AsyncSessionLocal
+        from app.models.achievement import Achievement
+        async with AsyncSessionLocal() as session:
+            row = (await session.execute(
+                sa_select(Achievement.id).where(Achievement.blizzard_id == achievement_id)
+            )).scalar_one_or_none()
+            return str(row) if row else None
+
+    ach_uuid = asyncio.run(_get_uuid())
+    if ach_uuid:
+        celery_app.send_task(
+            "pipeline.comments.process",
+            args=[ach_uuid],
+            queue="normal",
+        )
+
     return {
         "achievement_id": achievement_id,
         "status": result.scrape_status,
