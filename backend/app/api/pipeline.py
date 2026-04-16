@@ -86,17 +86,17 @@ async def debug_comments(achievement_id: int):
                         result["sample_html"] = full_html[max(0, idx-200):idx+2000]
                     else:
                         # Dump raw page HTML snippets around comment-related content
-                    full_html = await page.content()
-                    result["sample_html"] = "No comment elements found. Page length: " + str(len(full_html))
-                    # Find ALL occurrences of "comment" in HTML attributes
-                    import re
-                    classes = re.findall(r'class="([^"]*comment[^"]*)"', full_html, re.IGNORECASE)
-                    result["comment_classes"] = list(set(classes))[:20]
-                    ids = re.findall(r'id="([^"]*comment[^"]*)"', full_html, re.IGNORECASE)
-                    result["comment_ids"] = list(set(ids))[:20]
-                    # Find tab-related elements
-                    tabs = re.findall(r'(?:data-tab|class)="([^"]*(?:tab|comment)[^"]*)"', full_html, re.IGNORECASE)
-                    result["tab_attrs"] = list(set(tabs))[:20]
+                        full_html = await page.content()
+                        result["sample_html"] = "No comment elements found. Page length: " + str(len(full_html))
+                        # Find ALL occurrences of "comment" in HTML attributes
+                        import re
+                        classes = re.findall(r'class="([^"]*comment[^"]*)"', full_html, re.IGNORECASE)
+                        result["comment_classes"] = list(set(classes))[:20]
+                        ids = re.findall(r'id="([^"]*comment[^"]*)"', full_html, re.IGNORECASE)
+                        result["comment_ids"] = list(set(ids))[:20]
+                        # Find tab-related elements
+                        tabs = re.findall(r'(?:data-tab|class)="([^"]*(?:tab|comment)[^"]*)"', full_html, re.IGNORECASE)
+                        result["tab_attrs"] = list(set(tabs))[:20]
 
             result["page_title"] = await page.title()
         finally:
