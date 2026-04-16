@@ -24,7 +24,7 @@ async def get_stats():
                 select(Achievement.category, func.count(Achievement.id))
                 .group_by(Achievement.category)
                 .order_by(func.count(Achievement.id).desc())
-                .limit(20)
+                .limit(50)
             )
         ).all()
 

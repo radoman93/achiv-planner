@@ -44,7 +44,7 @@ class BlizzardRateLimiter:
                     return
                 await asyncio.sleep(0.01)
         finally:
-            await redis.close()
+            await redis.aclose()
 
 
 class BlizzardClient:
@@ -93,7 +93,7 @@ class BlizzardClient:
             await redis.set(key, token, ex=ttl)
             return token
         finally:
-            await redis.close()
+            await redis.aclose()
 
     async def _request(
         self,
@@ -138,7 +138,7 @@ class BlizzardClient:
                 try:
                     await redis.delete(TOKEN_CACHE_KEY.format(region=self.region))
                 finally:
-                    await redis.close()
+                    await redis.aclose()
                 continue
             if resp.status_code == 404:
                 raise BlizzardAPIError(f"404 Not Found: {url}")
@@ -156,7 +156,7 @@ class BlizzardClient:
             if cached:
                 return json.loads(cached)
         finally:
-            await redis.close()
+            await redis.aclose()
 
         url = f"https://{region}.api.blizzard.com/data/wow/achievement/index"
         params = {"namespace": f"static-{region}", "locale": "en_US"}
@@ -179,7 +179,7 @@ class BlizzardClient:
         try:
             await redis.set(cache_key, json.dumps(achievements), ex=86400)
         finally:
-            await redis.close()
+            await redis.aclose()
         return achievements
 
     async def get_achievement_detail(
@@ -193,7 +193,7 @@ class BlizzardClient:
             if cached:
                 return json.loads(cached)
         finally:
-            await redis.close()
+            await redis.aclose()
 
         url = f"https://{region}.api.blizzard.com/data/wow/achievement/{achievement_id}"
         params = {"namespace": f"static-{region}", "locale": "en_US"}
@@ -203,7 +203,7 @@ class BlizzardClient:
         try:
             await redis.set(cache_key, json.dumps(data), ex=21600)
         finally:
-            await redis.close()
+            await redis.aclose()
         return data
 
     async def get_achievement_categories(self, region: Optional[str] = None) -> list[dict]:
@@ -215,7 +215,7 @@ class BlizzardClient:
             if cached:
                 return json.loads(cached)
         finally:
-            await redis.close()
+            await redis.aclose()
 
         url = f"https://{region}.api.blizzard.com/data/wow/achievement-category/index"
         params = {"namespace": f"static-{region}", "locale": "en_US"}
@@ -226,7 +226,7 @@ class BlizzardClient:
         try:
             await redis.set(cache_key, json.dumps(categories), ex=86400)
         finally:
-            await redis.close()
+            await redis.aclose()
         return categories
 
     async def get_character_achievements(

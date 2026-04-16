@@ -136,11 +136,12 @@ def get_pool() -> BrowserPool:
 
 
 async def _check_cloudflare_pause() -> bool:
-    from app.core.redis import get_redis_client
+    import redis.asyncio as aioredis
+    from app.core.config import settings
 
-    redis = get_redis_client()
+    r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
     try:
-        val = await redis.get(CLOUDFLARE_PAUSE_KEY)
+        val = await r.get(CLOUDFLARE_PAUSE_KEY)
         if not val:
             return False
         try:
@@ -149,33 +150,35 @@ async def _check_cloudflare_pause() -> bool:
             return False
         return time.time() < until
     finally:
-        await redis.close()
+        await r.aclose()
 
 
 async def _record_cloudflare_block() -> None:
-    from app.core.redis import get_redis_client
+    import redis.asyncio as aioredis
+    from app.core.config import settings
 
-    redis = get_redis_client()
+    r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
     try:
-        count = await redis.incr(CLOUDFLARE_BLOCK_COUNTER_KEY)
-        await redis.expire(CLOUDFLARE_BLOCK_COUNTER_KEY, 600)
+        count = await r.incr(CLOUDFLARE_BLOCK_COUNTER_KEY)
+        await r.expire(CLOUDFLARE_BLOCK_COUNTER_KEY, 600)
         if count >= 5:
             until = time.time() + 3600
-            await redis.set(CLOUDFLARE_PAUSE_KEY, str(until), ex=3600)
-            await redis.delete(CLOUDFLARE_BLOCK_COUNTER_KEY)
+            await r.set(CLOUDFLARE_PAUSE_KEY, str(until), ex=3600)
+            await r.delete(CLOUDFLARE_BLOCK_COUNTER_KEY)
             logger.critical("wowhead.cloudflare_pause_triggered", until=until)
     finally:
-        await redis.close()
+        await r.aclose()
 
 
 async def _reset_cloudflare_counter() -> None:
-    from app.core.redis import get_redis_client
+    import redis.asyncio as aioredis
+    from app.core.config import settings
 
-    redis = get_redis_client()
+    r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
     try:
-        await redis.delete(CLOUDFLARE_BLOCK_COUNTER_KEY)
+        await r.delete(CLOUDFLARE_BLOCK_COUNTER_KEY)
     finally:
-        await redis.close()
+        await r.aclose()
 
 
 def _is_cloudflare_challenge(html: str) -> bool:

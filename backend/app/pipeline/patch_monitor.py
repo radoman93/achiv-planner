@@ -184,7 +184,7 @@ async def monitor_patches_async() -> dict[str, Any]:
 
         await redis.set(LAST_RUN_KEY, datetime.now(timezone.utc).isoformat())
     finally:
-        await redis.close()
+        await redis.aclose()
 
     return results
 

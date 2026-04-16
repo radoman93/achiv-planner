@@ -118,7 +118,7 @@ async def record_spend(
             "month_usd": month_usd,
         }
     finally:
-        await redis.close()
+        await redis.aclose()
 
 
 async def current_total_usd() -> float:
@@ -129,7 +129,7 @@ async def current_total_usd() -> float:
             return 0.0
         return int(val) / 10_000
     finally:
-        await redis.close()
+        await redis.aclose()
 
 
 async def current_month_usd() -> float:
@@ -140,7 +140,7 @@ async def current_month_usd() -> float:
             return 0.0
         return int(val) / 10_000
     finally:
-        await redis.close()
+        await redis.aclose()
 
 
 async def check_budget() -> tuple[bool, float]:
@@ -155,7 +155,7 @@ async def is_killed() -> bool:
         val = await redis.get(KILL_SWITCH_KEY)
         return bool(val) and val not in ("0", "false", "False")
     finally:
-        await redis.close()
+        await redis.aclose()
 
 
 async def set_kill_switch(enabled: bool) -> None:
@@ -166,4 +166,4 @@ async def set_kill_switch(enabled: bool) -> None:
         else:
             await redis.delete(KILL_SWITCH_KEY)
     finally:
-        await redis.close()
+        await redis.aclose()
