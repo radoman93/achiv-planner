@@ -37,4 +37,4 @@ celery_app.conf.update(
     },
 )
 
-celery_app.autodiscover_tasks(["app.pipeline", "app.scraper", "app.services"])
+# Task registration happens via explicit imports in celery_worker.py
