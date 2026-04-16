@@ -25,15 +25,26 @@ async def debug_comments(achievement_id: int):
         try:
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
             await page.wait_for_selector("#main-contents", timeout=15000)
-            # Click the comments tab to load them
-            try:
-                tab = await page.query_selector('#tab-comments, a[href="#comments"]')
-                if tab:
-                    await tab.click()
-                    await page.wait_for_timeout(4000)
-            except Exception:
-                pass
-            await page.wait_for_timeout(2000)
+            # Try multiple ways to load comments
+            tab_clicked = False
+            for tab_sel in ['#tab-comments', 'a[href="#comments"]', 'a[data-tab="comments"]',
+                            'li.tabs-comments', '.tabs a:has-text("Comments")', 'a:has-text("Comments")']:
+                try:
+                    tab = await page.query_selector(tab_sel)
+                    if tab:
+                        await tab.click()
+                        tab_clicked = True
+                        result["tab_clicked"] = tab_sel
+                        await page.wait_for_timeout(5000)
+                        break
+                except Exception:
+                    continue
+
+            if not tab_clicked:
+                # Try navigating with #comments hash
+                await page.goto(f"{url}#comments", wait_until="domcontentloaded", timeout=15000)
+                await page.wait_for_timeout(5000)
+                result["tab_clicked"] = "hash navigation"
 
             # Try many possible comment selectors
             selectors = [
@@ -74,7 +85,18 @@ async def debug_comments(achievement_id: int):
                     if idx > 0:
                         result["sample_html"] = full_html[max(0, idx-200):idx+2000]
                     else:
-                        result["sample_html"] = "No comment-related HTML found"
+                        # Dump raw page HTML snippets around comment-related content
+                    full_html = await page.content()
+                    result["sample_html"] = "No comment elements found. Page length: " + str(len(full_html))
+                    # Find ALL occurrences of "comment" in HTML attributes
+                    import re
+                    classes = re.findall(r'class="([^"]*comment[^"]*)"', full_html, re.IGNORECASE)
+                    result["comment_classes"] = list(set(classes))[:20]
+                    ids = re.findall(r'id="([^"]*comment[^"]*)"', full_html, re.IGNORECASE)
+                    result["comment_ids"] = list(set(ids))[:20]
+                    # Find tab-related elements
+                    tabs = re.findall(r'(?:data-tab|class)="([^"]*(?:tab|comment)[^"]*)"', full_html, re.IGNORECASE)
+                    result["tab_attrs"] = list(set(tabs))[:20]
 
             result["page_title"] = await page.title()
         finally:
