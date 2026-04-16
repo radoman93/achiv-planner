@@ -144,6 +144,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
+    expose:
+      - "5555"
     command: >
       celery -A celery_worker.celery_app flower
       --port=5555
