@@ -31,42 +31,7 @@ SOURCE_BASE_CONFIDENCE = {
 }
 
 # Schema block is cacheable — sent as a system block with cache_control.
-EXTRACTION_SCHEMA_DOC = """Return a JSON object with these exact fields:
-{
-  "primary_zone": "string or null",
-  "secondary_zones": ["string"] or [],
-  "instance_name": "string or null",
-  "instance_entrance_coords": {"x": float, "y": float, "map_id": string} or null,
-  "requires_flying": true/false/null,
-  "requires_group": true/false,
-  "min_group_size": integer or null,
-  "estimated_minutes": integer or null,
-  "estimated_minutes_range": [min, max] or null,
-  "prerequisites_mentioned": ["string"],
-  "coordinates": {"x": float, "y": float, "zone": "string", "map_id": "string or null"} or null,
-  "steps": [
-    {
-      "order": integer,
-      "description": "string",
-      "location": "string or null",
-      "coordinates": {"x": float, "y": float, "zone": "string"} or null,
-      "step_type": "travel|interact|kill|collect|talk|wait|other",
-      "source_excerpt": "3-5 words from source this was extracted from"
-    }
-  ],
-  "waypoints": [
-    {
-      "order": integer,
-      "x": float,
-      "y": float,
-      "zone": "string",
-      "label": "string",
-      "map_id": "string or null"
-    }
-  ] or [],
-  "community_tips": ["string"],
-  "confidence_flags": ["string describing what was uncertain or inferred"]
-}
+EXTRACTION_SYSTEM_PROMPT = """You are a World of Warcraft achievement data extractor. Given source material about a WoW achievement, extract structured information into the exact JSON schema provided.
 
 Rules (follow exactly):
 - Return null for any field where the information is not present in the provided sources
@@ -76,8 +41,93 @@ Rules (follow exactly):
 - For coordinates: extract WoW coordinates (x, y) from sources when mentioned (e.g. "go to 45.2, 67.8 in Stormwind"). These are used with the TomTom addon for in-game navigation
 - For instance_entrance_coords: provide the dungeon/raid entrance coordinates if mentioned or well-known
 - For waypoints: create an ordered list of all coordinates the player needs to visit, combining step coordinates into a TomTom-friendly sequence
-- Output ONLY valid JSON, no prose before or after.
+- For soloable: determine if the achievement can realistically be completed by a single max-level player based on the sources. true = confirmed soloable, false = requires group, null = unknown
+- Output ONLY valid JSON matching the schema, no prose before or after.
 """
+
+# JSON Schema for structured output — guarantees valid JSON from OpenRouter
+EXTRACTION_JSON_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "primary_zone": {"type": ["string", "null"]},
+        "secondary_zones": {"type": "array", "items": {"type": "string"}},
+        "instance_name": {"type": ["string", "null"]},
+        "instance_entrance_coords": {
+            "type": ["object", "null"],
+            "properties": {
+                "x": {"type": "number"},
+                "y": {"type": "number"},
+                "map_id": {"type": ["string", "null"]},
+            },
+        },
+        "requires_flying": {"type": ["boolean", "null"]},
+        "requires_group": {"type": ["boolean", "null"]},
+        "soloable": {"type": ["boolean", "null"]},
+        "min_group_size": {"type": ["integer", "null"]},
+        "estimated_minutes": {"type": ["integer", "null"]},
+        "estimated_minutes_range": {
+            "type": ["array", "null"],
+            "items": {"type": "integer"},
+        },
+        "prerequisites_mentioned": {"type": "array", "items": {"type": "string"}},
+        "coordinates": {
+            "type": ["object", "null"],
+            "properties": {
+                "x": {"type": "number"},
+                "y": {"type": "number"},
+                "zone": {"type": "string"},
+                "map_id": {"type": ["string", "null"]},
+            },
+        },
+        "steps": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "order": {"type": "integer"},
+                    "description": {"type": "string"},
+                    "location": {"type": ["string", "null"]},
+                    "coordinates": {
+                        "type": ["object", "null"],
+                        "properties": {
+                            "x": {"type": "number"},
+                            "y": {"type": "number"},
+                            "zone": {"type": "string"},
+                        },
+                    },
+                    "step_type": {
+                        "type": "string",
+                        "enum": ["travel", "interact", "kill", "collect", "talk", "wait", "other"],
+                    },
+                    "source_excerpt": {"type": ["string", "null"]},
+                },
+                "required": ["order", "description", "step_type"],
+            },
+        },
+        "waypoints": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "order": {"type": "integer"},
+                    "x": {"type": "number"},
+                    "y": {"type": "number"},
+                    "zone": {"type": "string"},
+                    "label": {"type": "string"},
+                    "map_id": {"type": ["string", "null"]},
+                },
+                "required": ["order", "x", "y", "zone", "label"],
+            },
+        },
+        "community_tips": {"type": "array", "items": {"type": "string"}},
+        "confidence_flags": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": [
+        "primary_zone", "secondary_zones", "instance_name", "requires_flying",
+        "requires_group", "soloable", "estimated_minutes", "steps",
+        "waypoints", "community_tips", "confidence_flags",
+    ],
+}
 
 
 def _html_to_text(html: str | None) -> str:
@@ -139,7 +189,7 @@ async def _gather_sources(
     return sources_text, used_sources, ach
 
 
-_ENRICHMENT_MODEL = "claude-opus-4-6"
+_ENRICHMENT_MODEL = "moonshotai/kimi-k2.5"
 
 
 def _select_model(sources_text: dict[str, str], used_sources: list[str]) -> str:
@@ -169,37 +219,40 @@ def _source_hash(sources: dict[str, str]) -> str:
     return h.hexdigest()
 
 
-async def _call_claude(model: str, user_message: str) -> tuple[str, dict[str, int]]:
-    from anthropic import AsyncAnthropic
+async def _call_llm(model: str, user_message: str) -> tuple[str, dict[str, int]]:
+    from openai import AsyncOpenAI
 
-    client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-    resp = await client.messages.create(
+    client = AsyncOpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=settings.OPENROUTER_API_KEY,
+    )
+    resp = await client.chat.completions.create(
         model=model,
         max_tokens=2000,
         temperature=0.0,
-        system=[
-            {
-                "type": "text",
-                "text": EXTRACTION_SCHEMA_DOC,
-                "cache_control": {"type": "ephemeral"},
-            }
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "achievement_enrichment",
+                "strict": True,
+                "schema": EXTRACTION_JSON_SCHEMA,
+            },
+        },
+        messages=[
+            {"role": "system", "content": EXTRACTION_SYSTEM_PROMPT},
+            {"role": "user", "content": user_message},
         ],
-        messages=[{"role": "user", "content": user_message}],
     )
 
-    parts: list[str] = []
-    for block in resp.content:
-        if getattr(block, "type", None) == "text":
-            parts.append(block.text)
-
+    text = resp.choices[0].message.content or ""
     usage = resp.usage
     token_info = {
-        "input_tokens": getattr(usage, "input_tokens", 0) or 0,
-        "output_tokens": getattr(usage, "output_tokens", 0) or 0,
-        "cache_read_input_tokens": getattr(usage, "cache_read_input_tokens", 0) or 0,
-        "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", 0) or 0,
+        "input_tokens": getattr(usage, "prompt_tokens", 0) or 0,
+        "output_tokens": getattr(usage, "completion_tokens", 0) or 0,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
     }
-    return "".join(parts), token_info
+    return text, token_info
 
 
 def _extract_json(raw: str) -> dict[str, Any] | None:
@@ -310,12 +363,6 @@ async def _latest_guide_hash(session: AsyncSession, achievement_id: UUID) -> str
     return None
 
 
-def _sample_ids() -> set[str]:
-    raw = (settings.LLM_SAMPLE_IDS or "").strip()
-    if not raw:
-        return set()
-    return {part.strip() for part in raw.split(",") if part.strip()}
-
 
 async def enrich_async(achievement_id: str) -> dict[str, Any]:
     # LLM_ENRICHMENT_ENABLED check bypassed — Coolify env var injection
@@ -362,7 +409,7 @@ async def enrich_async(achievement_id: str) -> dict[str, Any]:
         user_message = _build_user_message(ach.name or "unknown", sources_text)
 
         try:
-            raw, usage = await _call_claude(model, user_message)
+            raw, usage = await _call_llm(model, user_message)
         except Exception as exc:
             logger.exception("llm.call_failed", achievement_id=str(achievement_id))
             return {"status": "llm_error", "error": str(exc)}
@@ -387,133 +434,10 @@ async def enrich_async(achievement_id: str) -> dict[str, Any]:
         return {"status": "ok", "model": model, **summary}
 
 
-async def enrich_batch_async(achievement_ids: list[str]) -> dict[str, Any]:
-    """Route bulk enrichment through the Anthropic Batch API (50% cheaper)."""
-
-    if await llm_budget.is_killed():
-        return {"status": "killed", "count": 0}
-
-    under_budget, total_spent = await llm_budget.check_budget()
-    if not under_budget:
-        return {"status": "budget_exceeded", "total_spent_usd": total_spent, "count": 0}
-
-    from anthropic import AsyncAnthropic
-
-    prepared: list[dict[str, Any]] = []
-    meta_by_custom_id: dict[str, dict[str, Any]] = {}
-
-    async with AsyncSessionLocal() as session:
-        for ach_id in achievement_ids:
-            try:
-                ach_uuid = UUID(str(ach_id))
-            except ValueError:
-                continue
-            sources_text, used_sources, ach = await _gather_sources(session, ach_uuid)
-            if not sources_text or ach is None:
-                continue
-
-            source_hash = _source_hash(sources_text)
-            prior_hash = await _latest_guide_hash(session, ach_uuid)
-            if prior_hash == source_hash:
-                continue
-
-            model = _select_model(sources_text, used_sources)
-            user_message = _build_user_message(ach.name or "unknown", sources_text)
-            custom_id = f"ach-{ach.blizzard_id}"
-            prepared.append(
-                {
-                    "custom_id": custom_id,
-                    "params": {
-                        "model": model,
-                        "max_tokens": settings.LLM_MAX_OUTPUT_TOKENS,
-                        "temperature": 0.0,
-                        "system": [
-                            {
-                                "type": "text",
-                                "text": EXTRACTION_SCHEMA_DOC,
-                                "cache_control": {"type": "ephemeral"},
-                            }
-                        ],
-                        "messages": [{"role": "user", "content": user_message}],
-                    },
-                }
-            )
-            meta_by_custom_id[custom_id] = {
-                "achievement_uuid": ach_uuid,
-                "blizzard_id": ach.blizzard_id,
-                "model": model,
-                "used_sources": used_sources,
-                "sources_text": sources_text,
-                "source_hash": source_hash,
-            }
-
-    if not prepared:
-        return {"status": "nothing_to_do", "count": 0}
-
-    client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-    batch = await client.messages.batches.create(requests=prepared)
-    batch_id = batch.id
-    logger.info("llm.batch_submitted", batch_id=batch_id, count=len(prepared))
-
-    # Poll for completion
-    while True:
-        status = await client.messages.batches.retrieve(batch_id)
-        if status.processing_status == "ended":
-            break
-        await asyncio.sleep(30)
-
-    stored = 0
-    async with AsyncSessionLocal() as session:
-        async for result in await client.messages.batches.results(batch_id):
-            custom_id = result.custom_id
-            meta = meta_by_custom_id.get(custom_id)
-            if meta is None:
-                continue
-            if result.result.type != "succeeded":
-                logger.warning(
-                    "llm.batch_entry_failed",
-                    custom_id=custom_id,
-                    type=result.result.type,
-                )
-                continue
-            message = result.result.message
-            text_parts = [
-                b.text for b in message.content if getattr(b, "type", None) == "text"
-            ]
-            raw = "".join(text_parts)
-
-            usage = message.usage
-            await llm_budget.record_spend(
-                model=meta["model"],
-                input_tokens=getattr(usage, "input_tokens", 0) or 0,
-                output_tokens=getattr(usage, "output_tokens", 0) or 0,
-                cached_input_tokens=getattr(usage, "cache_read_input_tokens", 0) or 0,
-                batch=True,
-                achievement_id=str(meta["achievement_uuid"]),
-            )
-
-            parsed = _extract_json(raw)
-            if parsed is None:
-                logger.warning("llm.batch_invalid_json", custom_id=custom_id)
-                continue
-
-            await _validate_and_store(
-                session,
-                meta["achievement_uuid"],
-                parsed,
-                meta["used_sources"],
-                meta["sources_text"],
-                meta["source_hash"],
-            )
-            stored += 1
-
-    return {"status": "ok", "submitted": len(prepared), "stored": stored, "batch_id": batch_id}
-
-
 @celery_app.task(
     name="pipeline.llm.enrich",
     queue="llm_enrichment",
-    rate_limit="10/m",
+    rate_limit="30/m",
     autoretry_for=(Exception,),
     retry_kwargs={"max_retries": 3},
     retry_backoff=60,
@@ -523,9 +447,3 @@ def enrich_achievement_task(achievement_id: str) -> dict:
     return asyncio.run(enrich_async(achievement_id))
 
 
-@celery_app.task(
-    name="pipeline.llm.enrich_batch",
-    queue="llm_enrichment",
-)
-def enrich_batch_task(achievement_ids: list[str]) -> dict:
-    return asyncio.run(enrich_batch_async(achievement_ids))

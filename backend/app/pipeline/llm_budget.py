@@ -26,6 +26,10 @@ class ModelPricing:
 PRICING: dict[str, ModelPricing] = {
     "claude-haiku-4-5-20251001": ModelPricing(1.0, 5.0, 0.10),
     "claude-sonnet-4-20250514": ModelPricing(3.0, 15.0, 0.30),
+    "claude-opus-4-6": ModelPricing(15.0, 75.0, 1.50),
+    "moonshotai/kimi-k2.5": ModelPricing(0.38, 1.72, 0.15),
+    "moonshotai/kimi-k2": ModelPricing(0.60, 2.50, 0.15),
+    "qwen/qwen3-max": ModelPricing(0.78, 3.90, 0.10),
 }
 
 BATCH_DISCOUNT = 0.50  # Batch API = 50% off real-time pricing
@@ -34,9 +38,9 @@ BATCH_DISCOUNT = 0.50  # Batch API = 50% off real-time pricing
 def _pricing_for(model: str) -> ModelPricing:
     pricing = PRICING.get(model)
     if pricing is None:
-        # Unknown model → fall back to Sonnet pricing (conservative = more expensive)
+        # Unknown model → fall back to conservative estimate
         logger.warning("llm_budget.unknown_model", model=model)
-        return PRICING["claude-sonnet-4-20250514"]
+        return ModelPricing(1.0, 5.0, 0.10)
     return pricing
 
 

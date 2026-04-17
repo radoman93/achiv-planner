@@ -211,6 +211,7 @@ async def list_guides(page: int = 1, per_page: int = 50, search: str = ""):
                 "confidence_flags": (r[10] or {}).get("flags", []),
                 "steps": r[11] or [],
                 "processed_at": r[12].isoformat() if r[12] else None,
+                "soloable": (r[13] or {}).get("soloable") if isinstance(r[13], dict) else None,
                 "coordinates": (r[13] or {}).get("coordinates") if isinstance(r[13], dict) else None,
                 "instance_entrance_coords": (r[13] or {}).get("instance_entrance_coords") if isinstance(r[13], dict) else None,
                 "waypoints": (r[13] or {}).get("waypoints", []) if isinstance(r[13], dict) else [],
@@ -417,7 +418,8 @@ function renderGuide(g) {
       ${coords ? `<span style="color:#4fc3f7">Coords: ${coords}</span>` : ''}
       ${entrance ? `<span style="color:#4fc3f7">Entrance: ${entrance}</span>` : ''}
       ${g.estimated_minutes ? `<span>~${g.estimated_minutes} min</span>` : ''}
-      ${g.requires_group ? `<span>Group${g.min_group_size ? ': ' + g.min_group_size + '+' : ''}</span>` : '<span>Solo</span>'}
+      ${g.soloable === true ? '<span style="color:#4caf50">Soloable</span>' : g.soloable === false ? '<span style="color:#f44336">Not Soloable</span>' : ''}
+      ${g.requires_group ? `<span>Group${g.min_group_size ? ': ' + g.min_group_size + '+' : ''}</span>` : ''}
       ${g.requires_flying ? '<span>Flying req.</span>' : ''}
       <span>${g.source_type || 'unknown'}</span>
     </div>
