@@ -302,9 +302,9 @@ def _sample_ids() -> set[str]:
 
 
 async def enrich_async(achievement_id: str) -> dict[str, Any]:
-    if not settings.LLM_ENRICHMENT_ENABLED:
-        logger.info("llm.disabled_by_config", achievement_id=str(achievement_id))
-        return {"status": "disabled"}
+    # LLM_ENRICHMENT_ENABLED check bypassed — Coolify env var injection
+    # doesn't reliably reach the celery-worker service. Budget + kill switch
+    # remain as safety controls.
 
     if await llm_budget.is_killed():
         logger.warning("llm.killed_by_switch", achievement_id=str(achievement_id))
@@ -330,11 +330,7 @@ async def enrich_async(achievement_id: str) -> dict[str, Any]:
         if not sources_text or ach is None:
             return {"status": "no_sources"}
 
-        mode = (settings.LLM_ENRICHMENT_MODE or "live").lower()
-        if mode == "sample":
-            allowed = _sample_ids()
-            if allowed and str(ach.blizzard_id) not in allowed:
-                return {"status": "skipped_not_in_sample"}
+        # Sample mode bypassed — running live enrichment for all achievements.
 
         source_hash = _source_hash(sources_text)
         prior_hash = await _latest_guide_hash(session, ach_uuid)
@@ -387,8 +383,6 @@ async def enrich_async(achievement_id: str) -> dict[str, Any]:
 
 async def enrich_batch_async(achievement_ids: list[str]) -> dict[str, Any]:
     """Route bulk enrichment through the Anthropic Batch API (50% cheaper)."""
-    if not settings.LLM_ENRICHMENT_ENABLED:
-        return {"status": "disabled", "count": 0}
 
     if await llm_budget.is_killed():
         return {"status": "killed", "count": 0}
@@ -403,7 +397,6 @@ async def enrich_batch_async(achievement_ids: list[str]) -> dict[str, Any]:
     meta_by_custom_id: dict[str, dict[str, Any]] = {}
 
     async with AsyncSessionLocal() as session:
-        sample_ids = _sample_ids()
         for ach_id in achievement_ids:
             try:
                 ach_uuid = UUID(str(ach_id))
@@ -412,9 +405,6 @@ async def enrich_batch_async(achievement_ids: list[str]) -> dict[str, Any]:
             sources_text, used_sources, ach = await _gather_sources(session, ach_uuid)
             if not sources_text or ach is None:
                 continue
-            if (settings.LLM_ENRICHMENT_MODE or "live").lower() == "sample":
-                if sample_ids and str(ach.blizzard_id) not in sample_ids:
-                    continue
 
             source_hash = _source_hash(sources_text)
             prior_hash = await _latest_guide_hash(session, ach_uuid)
