@@ -345,16 +345,6 @@ async def enrich_async(achievement_id: str) -> dict[str, Any]:
         model = _select_model(sources_text, used_sources)
         user_message = _build_user_message(ach.name or "unknown", sources_text)
 
-        if mode == "dry_run":
-            logger.info(
-                "llm.dry_run",
-                achievement_id=str(achievement_id),
-                model=model,
-                prompt_chars=len(user_message),
-                sources=list(sources_text.keys()),
-            )
-            return {"status": "dry_run", "model": model, "prompt_chars": len(user_message)}
-
         try:
             raw, usage = await _call_claude(model, user_message)
         except Exception as exc:
@@ -443,14 +433,6 @@ async def enrich_batch_async(achievement_ids: list[str]) -> dict[str, Any]:
 
     if not prepared:
         return {"status": "nothing_to_do", "count": 0}
-
-    if (settings.LLM_ENRICHMENT_MODE or "live").lower() == "dry_run":
-        logger.info(
-            "llm.batch_dry_run",
-            requests=len(prepared),
-            models={p["params"]["model"] for p in prepared},
-        )
-        return {"status": "dry_run", "count": len(prepared)}
 
     client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
     batch = await client.messages.batches.create(requests=prepared)
