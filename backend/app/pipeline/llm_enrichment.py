@@ -42,7 +42,27 @@ Rules (follow exactly):
 - For instance_entrance_coords: provide the dungeon/raid entrance coordinates if mentioned or well-known
 - For waypoints: create an ordered list of all coordinates the player needs to visit, combining step coordinates into a TomTom-friendly sequence
 - For soloable: determine if the achievement can realistically be completed by a single max-level player based on the sources. true = confirmed soloable, false = requires group, null = unknown
-- Output ONLY valid JSON matching the schema, no prose before or after.
+- Output ONLY valid JSON, no prose before or after.
+
+Required JSON structure:
+{
+  "primary_zone": "string or null",
+  "secondary_zones": ["string"],
+  "instance_name": "string or null",
+  "instance_entrance_coords": {"x": float, "y": float, "map_id": "string"} or null,
+  "requires_flying": true/false/null,
+  "requires_group": true/false/null,
+  "soloable": true/false/null,
+  "min_group_size": integer or null,
+  "estimated_minutes": integer or null,
+  "estimated_minutes_range": [min, max] or null,
+  "prerequisites_mentioned": ["string"],
+  "coordinates": {"x": float, "y": float, "zone": "string", "map_id": "string or null"} or null,
+  "steps": [{"order": int, "description": "string", "location": "string or null", "coordinates": {"x": float, "y": float, "zone": "string"} or null, "step_type": "travel|interact|kill|collect|talk|wait|other", "source_excerpt": "3-5 words or null"}],
+  "waypoints": [{"order": int, "x": float, "y": float, "zone": "string", "label": "string", "map_id": "string or null"}],
+  "community_tips": ["string"],
+  "confidence_flags": ["string"]
+}
 """
 
 # JSON Schema for structured output — guarantees valid JSON from OpenRouter
@@ -230,14 +250,7 @@ async def _call_llm(model: str, user_message: str) -> tuple[str, dict[str, int]]
         model=model,
         max_tokens=2000,
         temperature=0.0,
-        response_format={
-            "type": "json_schema",
-            "json_schema": {
-                "name": "achievement_enrichment",
-                "strict": True,
-                "schema": EXTRACTION_JSON_SCHEMA,
-            },
-        },
+        response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": EXTRACTION_SYSTEM_PROMPT},
             {"role": "user", "content": user_message},
