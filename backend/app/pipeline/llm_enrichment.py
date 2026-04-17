@@ -123,12 +123,13 @@ async def _gather_sources(
     return sources_text, used_sources, ach
 
 
+_HAIKU_MODEL = "claude-haiku-4-5-20251001"
+
+
 def _select_model(sources_text: dict[str, str], used_sources: list[str]) -> str:
-    has_fallback = any(s in used_sources for s in ("icy_veins", "reddit", "youtube"))
-    total_chars = sum(len(v) for v in sources_text.values())
-    if not has_fallback and total_chars < 4000:
-        return settings.LLM_DEFAULT_MODEL  # Haiku
-    return settings.LLM_COMPLEX_MODEL  # Sonnet
+    # Use Haiku for all enrichment — Tier 1 API only has Haiku access.
+    # Upgrade to Sonnet via settings.LLM_COMPLEX_MODEL when available.
+    return _HAIKU_MODEL
 
 
 def _build_user_message(achievement_name: str, sources: dict[str, str]) -> str:
