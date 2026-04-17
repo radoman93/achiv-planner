@@ -123,13 +123,11 @@ async def _gather_sources(
     return sources_text, used_sources, ach
 
 
-_HAIKU_MODEL = "claude-haiku-4-5-20251001"
+_ENRICHMENT_MODEL = "claude-opus-4-6"
 
 
 def _select_model(sources_text: dict[str, str], used_sources: list[str]) -> str:
-    # Use Haiku for all enrichment — Tier 1 API only has Haiku access.
-    # Upgrade to Sonnet via settings.LLM_COMPLEX_MODEL when available.
-    return _HAIKU_MODEL
+    return _ENRICHMENT_MODEL
 
 
 def _build_user_message(achievement_name: str, sources: dict[str, str]) -> str:

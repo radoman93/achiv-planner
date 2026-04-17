@@ -59,6 +59,38 @@ async def trigger_enrich_samples():
     return JSONResponse({"dispatched": dispatched, "count": len(dispatched)})
 
 
+@router.post("/trigger/enrich-all")
+async def trigger_enrich_all():
+    """Dispatch LLM enrichment for all achievements that don't have a guide yet."""
+    from sqlalchemy import select as sa_select
+    from app.core.database import AsyncSessionLocal
+    from app.models.achievement import Achievement
+    from app.models.content import Guide
+
+    async with AsyncSessionLocal() as session:
+        # Get achievements that have been scraped but have no llm_enriched guide
+        enriched_ids = sa_select(Guide.achievement_id).where(Guide.source_type == "llm_enriched")
+        rows = (await session.execute(
+            sa_select(Achievement.id)
+            .where(Achievement.last_scraped_at.isnot(None))
+            .where(Achievement.id.notin_(enriched_ids))
+        )).scalars().all()
+
+    dispatched = 0
+    for ach_id in rows:
+        celery_app.send_task(
+            "pipeline.llm.enrich",
+            args=[str(ach_id)],
+            queue="llm_enrichment",
+        )
+        dispatched += 1
+
+    return JSONResponse({
+        "dispatched": dispatched,
+        "status": "enrichment_triggered",
+    })
+
+
 @router.post("/trigger/rescrape-failed")
 async def trigger_rescrape_failed():
     """Dispatch Wowhead scrapes for achievements that were never successfully scraped."""

@@ -157,6 +157,65 @@ async def get_stats():
     })
 
 
+@router.get("/guides")
+async def list_guides(page: int = 1, per_page: int = 50, search: str = ""):
+    async with AsyncSessionLocal() as session:
+        query = (
+            select(
+                Guide.id,
+                Achievement.blizzard_id,
+                Achievement.name,
+                Guide.source_type,
+                Guide.extracted_zone,
+                Guide.requires_flying_extracted,
+                Guide.requires_group_extracted,
+                Guide.min_group_size_extracted,
+                Guide.estimated_minutes_extracted,
+                Guide.confidence_score,
+                Guide.confidence_flags,
+                Guide.steps,
+                Guide.processed_at,
+            )
+            .join(Achievement, Achievement.id == Guide.achievement_id)
+        )
+        if search:
+            query = query.where(Achievement.name.ilike(f"%{search}%"))
+        query = query.order_by(Guide.processed_at.desc().nullslast()).offset((page - 1) * per_page).limit(per_page)
+
+        rows = (await session.execute(query)).all()
+
+        count_query = select(func.count(Guide.id))
+        if search:
+            count_query = count_query.join(Achievement, Achievement.id == Guide.achievement_id).where(
+                Achievement.name.ilike(f"%{search}%")
+            )
+        total = (await session.execute(count_query)).scalar() or 0
+
+    return JSONResponse({
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "guides": [
+            {
+                "id": str(r[0]),
+                "blizzard_id": r[1],
+                "achievement_name": r[2],
+                "source_type": r[3],
+                "zone": r[4],
+                "requires_flying": r[5],
+                "requires_group": r[6],
+                "min_group_size": r[7],
+                "estimated_minutes": r[8],
+                "confidence_score": round(r[9], 3) if r[9] else None,
+                "confidence_flags": (r[10] or {}).get("flags", []),
+                "steps": r[11] or [],
+                "processed_at": r[12].isoformat() if r[12] else None,
+            }
+            for r in rows
+        ],
+    })
+
+
 @router.get("/achievements")
 async def list_achievements(page: int = 1, per_page: int = 50, search: str = ""):
     async with AsyncSessionLocal() as session:
@@ -227,6 +286,26 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   .bar-row { display: flex; align-items: center; gap: 8px; margin: 3px 0; }
   .bar-label { font-size: 12px; width: 140px; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .bar-count { font-size: 12px; color: #888; min-width: 40px; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 16px; }
+  .tab { background: #1a1d27; border: 1px solid #2a2d37; color: #888; padding: 8px 20px; border-radius: 6px 6px 0 0; cursor: pointer; font-size: 14px; }
+  .tab.active { background: #2a2d37; color: #ffd100; border-bottom-color: #2a2d37; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+  .guide-card { background: #1a1d27; border: 1px solid #2a2d37; border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+  .guide-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .guide-title { font-size: 16px; font-weight: bold; color: #ffd100; }
+  .guide-meta { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; font-size: 13px; }
+  .guide-meta span { background: #2a2d37; padding: 2px 8px; border-radius: 4px; }
+  .step-list { list-style: none; padding: 0; }
+  .step-item { display: flex; gap: 10px; padding: 8px 0; border-top: 1px solid #2a2d37; font-size: 13px; }
+  .step-num { background: #ffd100; color: #0f1117; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; flex-shrink: 0; }
+  .step-type { background: #2a2d37; padding: 1px 6px; border-radius: 3px; font-size: 11px; color: #aaa; }
+  .confidence { font-size: 12px; padding: 2px 8px; border-radius: 4px; }
+  .confidence.high { background: #1a3a1a; color: #4caf50; }
+  .confidence.medium { background: #3a3a1a; color: #ffc107; }
+  .confidence.low { background: #3a1a1a; color: #f44336; }
+  .flag-list { margin-top: 8px; }
+  .flag-item { font-size: 11px; color: #888; padding: 2px 0; }
 </style>
 </head>
 <body>
@@ -234,31 +313,116 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
 <div class="stats" id="stats"></div>
 
-<div class="grid">
-  <div>
-    <h2>Categories</h2>
-    <div id="categories"></div>
-  </div>
-  <div>
-    <h2>Guide Sources</h2>
-    <div id="sources"></div>
-    <h2>Recent Achievements</h2>
-    <table><thead><tr><th>ID</th><th>Name</th><th>Category</th><th>Pts</th></tr></thead><tbody id="recent"></tbody></table>
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('overview')">Overview</div>
+  <div class="tab" onclick="switchTab('guides')">Guides</div>
+  <div class="tab" onclick="switchTab('achievements')">Achievements</div>
+</div>
+
+<div id="tab-overview" class="tab-content active">
+  <div class="grid">
+    <div>
+      <h2>Categories</h2>
+      <div id="categories"></div>
+    </div>
+    <div>
+      <h2>Guide Sources</h2>
+      <div id="sources"></div>
+      <h2>Recent Achievements</h2>
+      <table><thead><tr><th>ID</th><th>Name</th><th>Category</th><th>Pts</th></tr></thead><tbody id="recent"></tbody></table>
+    </div>
   </div>
 </div>
 
-<h2>All Achievements</h2>
-<div class="search"><input id="searchInput" placeholder="Search achievements..." oninput="searchDebounced()"></div>
-<table><thead><tr><th>Blizzard ID</th><th>Name</th><th>Category</th><th>Sub</th><th>Pts</th><th>Expansion</th><th>Meta</th></tr></thead><tbody id="achList"></tbody></table>
-<div class="pagination">
-  <button id="prevBtn" onclick="changePage(-1)">Prev</button>
-  <span id="pageInfo" style="padding:6px;font-size:13px;color:#888"></span>
-  <button id="nextBtn" onclick="changePage(1)">Next</button>
+<div id="tab-guides" class="tab-content">
+  <div class="search"><input id="guideSearchInput" placeholder="Search guides by achievement name..." oninput="guideSearchDebounced()"></div>
+  <div id="guideList"></div>
+  <div class="pagination">
+    <button id="guidePrevBtn" onclick="changeGuidePage(-1)">Prev</button>
+    <span id="guidePageInfo" style="padding:6px;font-size:13px;color:#888"></span>
+    <button id="guideNextBtn" onclick="changeGuidePage(1)">Next</button>
+  </div>
+</div>
+
+<div id="tab-achievements" class="tab-content">
+  <div class="search"><input id="searchInput" placeholder="Search achievements..." oninput="searchDebounced()"></div>
+  <table><thead><tr><th>Blizzard ID</th><th>Name</th><th>Category</th><th>Sub</th><th>Pts</th><th>Expansion</th><th>Meta</th></tr></thead><tbody id="achList"></tbody></table>
+  <div class="pagination">
+    <button id="prevBtn" onclick="changePage(-1)">Prev</button>
+    <span id="pageInfo" style="padding:6px;font-size:13px;color:#888"></span>
+    <button id="nextBtn" onclick="changePage(1)">Next</button>
+  </div>
 </div>
 
 <script>
 let currentPage = 1, totalAch = 0, searchTimer;
+let guidePage = 1, totalGuides = 0, guideSearchTimer;
 const API = window.location.origin + '/api/dashboard';
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelector(`.tab-content#tab-${name}`).classList.add('active');
+  event.target.classList.add('active');
+  if (name === 'guides') loadGuides();
+  if (name === 'achievements') loadAchievements();
+}
+
+function confidenceClass(score) {
+  if (score >= 0.65) return 'high';
+  if (score >= 0.4) return 'medium';
+  return 'low';
+}
+
+function renderGuide(g) {
+  const steps = (g.steps || []).map(s =>
+    `<li class="step-item">
+      <span class="step-num">${s.order || '?'}</span>
+      <div>
+        <span>${s.description || ''}</span>
+        ${s.location ? ` <span class="step-type">${s.location}</span>` : ''}
+        ${s.step_type ? ` <span class="step-type">${s.step_type}</span>` : ''}
+      </div>
+    </li>`
+  ).join('');
+
+  const flags = (g.confidence_flags || []).map(f =>
+    `<div class="flag-item">- ${f}</div>`
+  ).join('');
+
+  return `<div class="guide-card">
+    <div class="guide-header">
+      <span class="guide-title">${g.achievement_name} <span style="color:#888;font-weight:normal;font-size:13px">#${g.blizzard_id}</span></span>
+      <span class="confidence ${confidenceClass(g.confidence_score || 0)}">${g.confidence_score ? (g.confidence_score * 100).toFixed(0) + '%' : 'N/A'}</span>
+    </div>
+    <div class="guide-meta">
+      ${g.zone ? `<span>Zone: ${g.zone}</span>` : ''}
+      ${g.estimated_minutes ? `<span>~${g.estimated_minutes} min</span>` : ''}
+      ${g.requires_group ? `<span>Group${g.min_group_size ? ': ' + g.min_group_size + '+' : ''}</span>` : '<span>Solo</span>'}
+      ${g.requires_flying ? '<span>Flying req.</span>' : ''}
+      <span>${g.source_type || 'unknown'}</span>
+    </div>
+    ${steps ? `<ul class="step-list">${steps}</ul>` : '<p style="color:#666;font-size:13px">No steps extracted</p>'}
+    ${flags ? `<div class="flag-list"><strong style="font-size:11px;color:#666">Confidence flags:</strong>${flags}</div>` : ''}
+  </div>`;
+}
+
+async function loadGuides() {
+  const search = document.getElementById('guideSearchInput').value;
+  const r = await fetch(API + '/guides?page=' + guidePage + '&per_page=20&search=' + encodeURIComponent(search));
+  const d = await r.json();
+  totalGuides = d.total;
+  document.getElementById('guideList').innerHTML = d.guides.length
+    ? d.guides.map(renderGuide).join('')
+    : '<p style="color:#666;padding:20px;text-align:center">No guides yet — run LLM enrichment first</p>';
+  const totalPages = Math.ceil(totalGuides / 20);
+  document.getElementById('guidePageInfo').textContent = 'Page ' + guidePage + ' of ' + totalPages + ' (' + totalGuides + ' guides)';
+  document.getElementById('guidePrevBtn').disabled = guidePage <= 1;
+  document.getElementById('guideNextBtn').disabled = guidePage >= totalPages;
+}
+
+function changeGuidePage(d) { guidePage += d; loadGuides(); }
+function guideSearchDebounced() { clearTimeout(guideSearchTimer); guideSearchTimer = setTimeout(() => { guidePage = 1; loadGuides(); }, 300); }
 
 async function loadStats() {
   try {
