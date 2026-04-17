@@ -175,6 +175,7 @@ async def list_guides(page: int = 1, per_page: int = 50, search: str = ""):
                 Guide.confidence_flags,
                 Guide.steps,
                 Guide.processed_at,
+                Guide.processed_content,
             )
             .join(Achievement, Achievement.id == Guide.achievement_id)
         )
@@ -210,6 +211,9 @@ async def list_guides(page: int = 1, per_page: int = 50, search: str = ""):
                 "confidence_flags": (r[10] or {}).get("flags", []),
                 "steps": r[11] or [],
                 "processed_at": r[12].isoformat() if r[12] else None,
+                "coordinates": (r[13] or {}).get("coordinates") if isinstance(r[13], dict) else None,
+                "instance_entrance_coords": (r[13] or {}).get("instance_entrance_coords") if isinstance(r[13], dict) else None,
+                "waypoints": (r[13] or {}).get("waypoints", []) if isinstance(r[13], dict) else [],
             }
             for r in rows
         ],
@@ -374,6 +378,11 @@ function confidenceClass(score) {
   return 'low';
 }
 
+function fmtCoord(c) {
+  if (!c || c.x == null) return '';
+  return `${c.x.toFixed(1)}, ${c.y.toFixed(1)}` + (c.zone ? ` (${c.zone})` : '');
+}
+
 function renderGuide(g) {
   const steps = (g.steps || []).map(s =>
     `<li class="step-item">
@@ -382,13 +391,21 @@ function renderGuide(g) {
         <span>${s.description || ''}</span>
         ${s.location ? ` <span class="step-type">${s.location}</span>` : ''}
         ${s.step_type ? ` <span class="step-type">${s.step_type}</span>` : ''}
+        ${s.coordinates ? ` <span class="step-type" style="color:#4fc3f7">/way ${s.coordinates.zone || g.zone || ''} ${s.coordinates.x} ${s.coordinates.y}</span>` : ''}
       </div>
     </li>`
+  ).join('');
+
+  const waypoints = (g.waypoints || []).map(w =>
+    `<code style="display:block;font-size:12px;color:#4fc3f7;padding:2px 0">/way ${w.zone || ''} ${w.x} ${w.y} ${w.label || ''}</code>`
   ).join('');
 
   const flags = (g.confidence_flags || []).map(f =>
     `<div class="flag-item">- ${f}</div>`
   ).join('');
+
+  const coords = g.coordinates ? fmtCoord(g.coordinates) : '';
+  const entrance = g.instance_entrance_coords ? fmtCoord(g.instance_entrance_coords) : '';
 
   return `<div class="guide-card">
     <div class="guide-header">
@@ -397,12 +414,15 @@ function renderGuide(g) {
     </div>
     <div class="guide-meta">
       ${g.zone ? `<span>Zone: ${g.zone}</span>` : ''}
+      ${coords ? `<span style="color:#4fc3f7">Coords: ${coords}</span>` : ''}
+      ${entrance ? `<span style="color:#4fc3f7">Entrance: ${entrance}</span>` : ''}
       ${g.estimated_minutes ? `<span>~${g.estimated_minutes} min</span>` : ''}
       ${g.requires_group ? `<span>Group${g.min_group_size ? ': ' + g.min_group_size + '+' : ''}</span>` : '<span>Solo</span>'}
       ${g.requires_flying ? '<span>Flying req.</span>' : ''}
       <span>${g.source_type || 'unknown'}</span>
     </div>
     ${steps ? `<ul class="step-list">${steps}</ul>` : '<p style="color:#666;font-size:13px">No steps extracted</p>'}
+    ${waypoints ? `<div style="margin-top:8px;background:#1a2a3a;padding:8px;border-radius:4px"><strong style="font-size:11px;color:#4fc3f7">TomTom Waypoints:</strong>${waypoints}</div>` : ''}
     ${flags ? `<div class="flag-list"><strong style="font-size:11px;color:#666">Confidence flags:</strong>${flags}</div>` : ''}
   </div>`;
 }

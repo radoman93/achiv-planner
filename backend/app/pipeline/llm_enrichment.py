@@ -36,21 +36,34 @@ EXTRACTION_SCHEMA_DOC = """Return a JSON object with these exact fields:
   "primary_zone": "string or null",
   "secondary_zones": ["string"] or [],
   "instance_name": "string or null",
+  "instance_entrance_coords": {"x": float, "y": float, "map_id": string} or null,
   "requires_flying": true/false/null,
   "requires_group": true/false,
   "min_group_size": integer or null,
   "estimated_minutes": integer or null,
   "estimated_minutes_range": [min, max] or null,
   "prerequisites_mentioned": ["string"],
+  "coordinates": {"x": float, "y": float, "zone": "string", "map_id": "string or null"} or null,
   "steps": [
     {
       "order": integer,
       "description": "string",
       "location": "string or null",
+      "coordinates": {"x": float, "y": float, "zone": "string"} or null,
       "step_type": "travel|interact|kill|collect|talk|wait|other",
       "source_excerpt": "3-5 words from source this was extracted from"
     }
   ],
+  "waypoints": [
+    {
+      "order": integer,
+      "x": float,
+      "y": float,
+      "zone": "string",
+      "label": "string",
+      "map_id": "string or null"
+    }
+  ] or [],
   "community_tips": ["string"],
   "confidence_flags": ["string describing what was uncertain or inferred"]
 }
@@ -60,6 +73,9 @@ Rules (follow exactly):
 - Do not infer or guess — only extract what is explicitly stated
 - source_excerpt must be 3-5 words that appear verbatim in the source text
 - confidence_flags should list every field where you were uncertain or had to choose between conflicting sources
+- For coordinates: extract WoW coordinates (x, y) from sources when mentioned (e.g. "go to 45.2, 67.8 in Stormwind"). These are used with the TomTom addon for in-game navigation
+- For instance_entrance_coords: provide the dungeon/raid entrance coordinates if mentioned or well-known
+- For waypoints: create an ordered list of all coordinates the player needs to visit, combining step coordinates into a TomTom-friendly sequence
 - Output ONLY valid JSON, no prose before or after.
 """
 
@@ -497,7 +513,11 @@ async def enrich_batch_async(achievement_ids: list[str]) -> dict[str, Any]:
 @celery_app.task(
     name="pipeline.llm.enrich",
     queue="llm_enrichment",
-    rate_limit="50/m",
+    rate_limit="10/m",
+    autoretry_for=(Exception,),
+    retry_kwargs={"max_retries": 3},
+    retry_backoff=60,
+    retry_backoff_max=300,
 )
 def enrich_achievement_task(achievement_id: str) -> dict:
     return asyncio.run(enrich_async(achievement_id))

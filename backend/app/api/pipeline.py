@@ -24,6 +24,13 @@ async def trigger_scrape_coordinator():
     return JSONResponse({"task_id": result.id, "status": "queued"})
 
 
+@router.post("/clear-queue")
+async def clear_queue():
+    """Purge all pending Celery tasks."""
+    celery_app.control.purge()
+    return JSONResponse({"status": "queue_cleared"})
+
+
 @router.post("/clear-and-rescrape")
 async def clear_and_rescrape():
     """Purge all pending Celery tasks and re-trigger Wowhead scraping."""
