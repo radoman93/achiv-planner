@@ -175,7 +175,7 @@ async def _call_claude(model: str, user_message: str) -> tuple[str, dict[str, in
     client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
     resp = await client.messages.create(
         model=model,
-        max_tokens=settings.LLM_MAX_OUTPUT_TOKENS,
+        max_tokens=2000,
         temperature=0.0,
         system=[
             {
