@@ -98,6 +98,23 @@ async def trigger_enrich_all():
     })
 
 
+@router.post("/reset-llm-budget")
+async def reset_llm_budget():
+    """Reset the LLM spend counters in Redis (use after switching providers)."""
+    from app.core.redis import get_redis_client
+    redis = get_redis_client()
+    try:
+        old_total = await redis.get("llm:spend:total_usd_cents")
+        await redis.delete("llm:spend:total_usd_cents")
+        await redis.delete("llm:spend:thresholds_hit")
+        return JSONResponse({
+            "status": "budget_reset",
+            "old_total_usd": int(old_total or 0) / 10_000,
+        })
+    finally:
+        await redis.aclose()
+
+
 @router.post("/trigger/rescrape-failed")
 async def trigger_rescrape_failed():
     """Dispatch Wowhead scrapes for achievements that were never successfully scraped."""
