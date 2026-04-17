@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     LLM_MONTHLY_BUDGET_USD: float = 25.0
     LLM_BUDGET_HARD_STOP_USD: float = 20.0
     LLM_BATCH_MIN_SIZE: int = 20
-    LLM_MAX_OUTPUT_TOKENS: int = 800
+    LLM_MAX_OUTPUT_TOKENS: int = 2000
 
     FRONTEND_URL: str = "http://localhost:3000"
     RAW_STORAGE_PATH: str = "/raw_storage"
