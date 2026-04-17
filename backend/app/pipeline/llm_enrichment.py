@@ -209,7 +209,7 @@ async def _gather_sources(
     return sources_text, used_sources, ach
 
 
-_ENRICHMENT_MODEL = "moonshotai/kimi-k2.5"
+_ENRICHMENT_MODEL = "moonshotai/kimi-k2"
 
 
 def _select_model(sources_text: dict[str, str], used_sources: list[str]) -> str:
