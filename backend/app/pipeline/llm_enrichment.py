@@ -437,30 +437,43 @@ async def enrich_async(achievement_id: str) -> dict[str, Any]:
         model = _select_model(sources_text, used_sources)
         user_message = _build_user_message(ach.name or "unknown", sources_text)
 
-        try:
-            raw, usage = await _call_llm(model, user_message)
-        except Exception as exc:
-            logger.exception("llm.call_failed", achievement_id=str(achievement_id))
-            return {"status": "llm_error", "error": str(exc)}
+        # Retry up to 3 times for invalid JSON (model sometimes garbles output)
+        last_error = None
+        for attempt in range(3):
+            try:
+                raw, usage = await _call_llm(model, user_message)
+            except Exception as exc:
+                logger.exception("llm.call_failed", achievement_id=str(achievement_id), attempt=attempt)
+                last_error = str(exc)
+                await asyncio.sleep(2 ** attempt)
+                continue
 
-        await llm_budget.record_spend(
-            model=model,
-            input_tokens=usage["input_tokens"],
-            output_tokens=usage["output_tokens"],
-            cached_input_tokens=usage["cache_read_input_tokens"],
-            batch=False,
-            achievement_id=str(achievement_id),
-        )
+            await llm_budget.record_spend(
+                model=model,
+                input_tokens=usage["input_tokens"],
+                output_tokens=usage["output_tokens"],
+                cached_input_tokens=usage["cache_read_input_tokens"],
+                batch=False,
+                achievement_id=str(achievement_id),
+            )
 
-        parsed = _extract_json(raw)
-        if parsed is None:
-            logger.warning("llm.invalid_json", achievement_id=str(achievement_id))
-            return {"status": "invalid_json"}
+            parsed = _extract_json(raw)
+            if parsed is not None:
+                summary = await _validate_and_store(
+                    session, ach_uuid, parsed, used_sources, sources_text, source_hash
+                )
+                return {"status": "ok", "model": model, **summary}
 
-        summary = await _validate_and_store(
-            session, ach_uuid, parsed, used_sources, sources_text, source_hash
-        )
-        return {"status": "ok", "model": model, **summary}
+            logger.warning(
+                "llm.invalid_json_retry",
+                achievement_id=str(achievement_id),
+                attempt=attempt,
+                raw_preview=raw[:200] if raw else "(empty)",
+            )
+            last_error = f"invalid_json (attempt {attempt + 1})"
+            await asyncio.sleep(2 ** attempt)
+
+        return {"status": "invalid_json", "error": last_error}
 
 
 @celery_app.task(
