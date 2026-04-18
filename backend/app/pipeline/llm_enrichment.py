@@ -250,7 +250,6 @@ async def _call_llm(model: str, user_message: str) -> tuple[str, dict[str, int]]
         model=model,
         max_tokens=2000,
         temperature=0.0,
-        response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": EXTRACTION_SYSTEM_PROMPT},
             {"role": "user", "content": user_message},
