@@ -41,7 +41,7 @@ Rules (follow exactly):
 - For coordinates: extract WoW coordinates (x, y) from sources when mentioned (e.g. "go to 45.2, 67.8 in Stormwind"). These are used with the TomTom addon for in-game navigation
 - For instance_entrance_coords: provide the dungeon/raid entrance coordinates if mentioned or well-known
 - For waypoints: create an ordered list of all coordinates the player needs to visit, combining step coordinates into a TomTom-friendly sequence
-- For soloable: determine if the achievement can realistically be completed by a single max-level player based on the sources. true = confirmed soloable, false = requires group, null = unknown
+- For soloable: determine if the achievement can realistically be completed by a single max-level player. Important WoW context: dungeons and raids from previous expansions (not the current expansion "The War Within") are almost always soloable at max level due to level scaling. Only current-expansion mythic raids and high mythic+ dungeons typically require a group. Default to soloable=true for older expansion content unless sources explicitly state otherwise
 - Output ONLY valid JSON, no prose before or after.
 
 Required JSON structure:
