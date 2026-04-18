@@ -209,7 +209,7 @@ async def _gather_sources(
     return sources_text, used_sources, ach
 
 
-_ENRICHMENT_MODEL = "moonshotai/kimi-k2"
+_ENRICHMENT_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 
 
 def _select_model(sources_text: dict[str, str], used_sources: list[str]) -> str:
@@ -250,7 +250,6 @@ async def _call_llm(model: str, user_message: str) -> tuple[str, dict[str, int]]
         model=model,
         max_tokens=2000,
         temperature=0.0,
-        extra_body={"provider": {"order": ["Cloudflare", "Together"]}},
         messages=[
             {"role": "system", "content": EXTRACTION_SYSTEM_PROMPT},
             {"role": "user", "content": user_message},
@@ -440,7 +439,7 @@ async def enrich_async(achievement_id: str) -> dict[str, Any]:
 
         # Retry up to 3 times for invalid JSON (model sometimes garbles output)
         # Use fallback model on retries
-        _FALLBACK_MODEL = "qwen/qwen3-8b"
+        _FALLBACK_MODEL = "qwen/qwen3-8b:free"
         last_error = None
         for attempt in range(3):
             attempt_model = model if attempt == 0 else _FALLBACK_MODEL
@@ -483,7 +482,7 @@ async def enrich_async(achievement_id: str) -> dict[str, Any]:
 @celery_app.task(
     name="pipeline.llm.enrich",
     queue="llm_enrichment",
-    rate_limit="30/m",
+    rate_limit="15/m",
     autoretry_for=(Exception,),
     retry_kwargs={"max_retries": 3},
     retry_backoff=60,
