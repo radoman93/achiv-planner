@@ -221,7 +221,7 @@ def _build_user_message(achievement_name: str, sources: dict[str, str]) -> str:
     for name, text in sources.items():
         if not text:
             continue
-        blocks.append(f"=== SOURCE: {name} ===\n{text[:12000]}")
+        blocks.append(f"=== SOURCE: {name} ===\n{text[:6000]}")
     sources_block = "\n\n".join(blocks) if blocks else "(no sources available)"
     return (
         f"Achievement name: {achievement_name}\n\n"
@@ -250,6 +250,7 @@ async def _call_llm(model: str, user_message: str) -> tuple[str, dict[str, int]]
         model=model,
         max_tokens=2000,
         temperature=0.0,
+        extra_body={"provider": {"order": ["Cloudflare", "Together"]}},
         messages=[
             {"role": "system", "content": EXTRACTION_SYSTEM_PROMPT},
             {"role": "user", "content": user_message},
@@ -438,10 +439,13 @@ async def enrich_async(achievement_id: str) -> dict[str, Any]:
         user_message = _build_user_message(ach.name or "unknown", sources_text)
 
         # Retry up to 3 times for invalid JSON (model sometimes garbles output)
+        # Use fallback model on retries
+        _FALLBACK_MODEL = "qwen/qwen3-8b"
         last_error = None
         for attempt in range(3):
+            attempt_model = model if attempt == 0 else _FALLBACK_MODEL
             try:
-                raw, usage = await _call_llm(model, user_message)
+                raw, usage = await _call_llm(attempt_model, user_message)
             except Exception as exc:
                 logger.exception("llm.call_failed", achievement_id=str(achievement_id), attempt=attempt)
                 last_error = str(exc)
@@ -449,7 +453,7 @@ async def enrich_async(achievement_id: str) -> dict[str, Any]:
                 continue
 
             await llm_budget.record_spend(
-                model=model,
+                model=attempt_model,
                 input_tokens=usage["input_tokens"],
                 output_tokens=usage["output_tokens"],
                 cached_input_tokens=usage["cache_read_input_tokens"],
@@ -462,7 +466,7 @@ async def enrich_async(achievement_id: str) -> dict[str, Any]:
                 summary = await _validate_and_store(
                     session, ach_uuid, parsed, used_sources, sources_text, source_hash
                 )
-                return {"status": "ok", "model": model, **summary}
+                return {"status": "ok", "model": attempt_model, **summary}
 
             logger.warning(
                 "llm.invalid_json_retry",
