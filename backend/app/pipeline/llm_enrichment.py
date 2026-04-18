@@ -209,6 +209,7 @@ async def _gather_sources(
     return sources_text, used_sources, ach
 
 
+# v2: rotates across all free OpenRouter models
 _ENRICHMENT_MODEL = "openrouter/free"
 
 
