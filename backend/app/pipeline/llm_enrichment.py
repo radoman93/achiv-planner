@@ -268,13 +268,30 @@ async def _call_llm(model: str, user_message: str) -> tuple[str, dict[str, int]]
 
 
 def _extract_json(raw: str) -> dict[str, Any] | None:
-    m = re.search(r"\{.*\}", raw.strip(), re.DOTALL)
+    text = raw.strip()
+    # Strip markdown code fences if present
+    if "```" in text:
+        m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+        if m:
+            text = m.group(1)
+    # Try direct parse first
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    # Fall back to regex extraction
+    m = re.search(r"\{.*\}", text, re.DOTALL)
     if not m:
         return None
     try:
         return json.loads(m.group(0))
     except json.JSONDecodeError:
-        return None
+        # Try fixing common issues: trailing commas
+        cleaned = re.sub(r",\s*([}\]])", r"\1", m.group(0))
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            return None
 
 
 async def _validate_and_store(

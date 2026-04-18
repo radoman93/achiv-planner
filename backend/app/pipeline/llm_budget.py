@@ -148,9 +148,9 @@ async def current_month_usd() -> float:
 
 
 async def check_budget() -> tuple[bool, float]:
-    """Returns (under_budget, current_total_usd). Hard-stops at LLM_BUDGET_HARD_STOP_USD."""
+    """Returns (under_budget, current_total_usd). Hard-stops at $50."""
     total = await current_total_usd()
-    return (total < settings.LLM_BUDGET_HARD_STOP_USD, total)
+    return (total < 50.0, total)
 
 
 async def is_killed() -> bool:
