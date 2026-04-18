@@ -209,7 +209,7 @@ async def _gather_sources(
     return sources_text, used_sources, ach
 
 
-_ENRICHMENT_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
+_ENRICHMENT_MODEL = "openrouter/free"
 
 
 def _select_model(sources_text: dict[str, str], used_sources: list[str]) -> str:
@@ -439,7 +439,7 @@ async def enrich_async(achievement_id: str) -> dict[str, Any]:
 
         # Retry up to 3 times for invalid JSON (model sometimes garbles output)
         # Use fallback model on retries
-        _FALLBACK_MODEL = "qwen/qwen3-8b:free"
+        _FALLBACK_MODEL = "openrouter/free"
         last_error = None
         for attempt in range(3):
             attempt_model = model if attempt == 0 else _FALLBACK_MODEL
