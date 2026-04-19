@@ -209,8 +209,7 @@ async def _gather_sources(
     return sources_text, used_sources, ach
 
 
-# v2: rotates across all free OpenRouter models
-_ENRICHMENT_MODEL = "openrouter/free"
+_ENRICHMENT_MODEL = "minimax/minimax-m2.5:free"
 
 
 def _select_model(sources_text: dict[str, str], used_sources: list[str]) -> str:
