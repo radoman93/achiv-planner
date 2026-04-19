@@ -471,13 +471,24 @@ async def enrich_async(achievement_id: str) -> dict[str, Any]:
             logger.warning(
                 "llm.invalid_json_retry",
                 achievement_id=str(achievement_id),
+                achievement_name=ach.name,
                 attempt=attempt,
-                raw_preview=raw[:200] if raw else "(empty)",
+                attempt_model=attempt_model,
+                raw_length=len(raw) if raw else 0,
+                raw_preview=raw[:500] if raw else "(empty)",
             )
             last_error = f"invalid_json (attempt {attempt + 1})"
             await asyncio.sleep(2 ** attempt)
 
-        return {"status": "invalid_json", "error": last_error}
+        return {
+            "status": "invalid_json",
+            "error": last_error,
+            "achievement_name": ach.name,
+            "blizzard_id": ach.blizzard_id,
+            "sources_used": list(sources_text.keys()),
+            "input_chars": sum(len(v) for v in sources_text.values()),
+            "last_raw_preview": raw[:300] if raw else "(empty)",
+        }
 
 
 @celery_app.task(
