@@ -217,11 +217,22 @@ def _select_model(sources_text: dict[str, str], used_sources: list[str]) -> str:
 
 
 def _build_user_message(achievement_name: str, sources: dict[str, str]) -> str:
+    # Prioritize sources: blizzard > wowhead_comments > wowhead > rest
+    priority = ["blizzard", "wowhead_comments", "wowhead", "icy_veins", "reddit"]
+    ordered = sorted(sources.keys(), key=lambda k: priority.index(k) if k in priority else 99)
     blocks = []
-    for name, text in sources.items():
+    total_chars = 0
+    max_total = 4000  # keep total input small for free models
+    for name in ordered:
+        text = sources.get(name, "")
         if not text:
             continue
-        blocks.append(f"=== SOURCE: {name} ===\n{text[:6000]}")
+        remaining = max_total - total_chars
+        if remaining <= 200:
+            break
+        chunk = text[:min(2000, remaining)]
+        blocks.append(f"=== SOURCE: {name} ===\n{chunk}")
+        total_chars += len(chunk)
     sources_block = "\n\n".join(blocks) if blocks else "(no sources available)"
     return (
         f"Achievement name: {achievement_name}\n\n"
@@ -257,6 +268,8 @@ async def _call_llm(model: str, user_message: str) -> tuple[str, dict[str, int]]
     )
 
     text = resp.choices[0].message.content or ""
+    if not text.strip():
+        raise ValueError(f"Model {model} returned empty content")
     usage = resp.usage
     token_info = {
         "input_tokens": getattr(usage, "prompt_tokens", 0) or 0,
@@ -437,12 +450,15 @@ async def enrich_async(achievement_id: str) -> dict[str, Any]:
         model = _select_model(sources_text, used_sources)
         user_message = _build_user_message(ach.name or "unknown", sources_text)
 
-        # Retry up to 3 times for invalid JSON (model sometimes garbles output)
-        # Use fallback model on retries
-        _FALLBACK_MODEL = "openrouter/free"
+        # Retry with different free models on each attempt
+        _MODELS = [
+            "minimax/minimax-m2.5:free",
+            "moonshotai/kimi-k2:free",
+            "qwen/qwen3-8b:free",
+        ]
         last_error = None
         for attempt in range(3):
-            attempt_model = model if attempt == 0 else _FALLBACK_MODEL
+            attempt_model = _MODELS[attempt % len(_MODELS)]
             try:
                 raw, usage = await _call_llm(attempt_model, user_message)
             except Exception as exc:
@@ -479,15 +495,30 @@ async def enrich_async(achievement_id: str) -> dict[str, Any]:
             last_error = f"invalid_json (attempt {attempt + 1})"
             await asyncio.sleep(2 ** attempt)
 
-        return {
-            "status": "invalid_json",
-            "error": last_error,
-            "achievement_name": ach.name,
-            "blizzard_id": ach.blizzard_id,
-            "sources_used": list(sources_text.keys()),
-            "input_chars": sum(len(v) for v in sources_text.values()),
-            "last_raw_preview": raw[:300] if raw else "(empty)",
+        # All LLM attempts failed — create minimal guide from available data
+        logger.warning(
+            "llm.all_attempts_failed_using_fallback",
+            achievement_id=str(achievement_id),
+            achievement_name=ach.name,
+        )
+        fallback_parsed = {
+            "primary_zone": None,
+            "secondary_zones": [],
+            "instance_name": None,
+            "requires_flying": None,
+            "requires_group": None,
+            "soloable": None,
+            "min_group_size": None,
+            "estimated_minutes": None,
+            "steps": [],
+            "waypoints": [],
+            "community_tips": [],
+            "confidence_flags": ["llm_extraction_failed_all_attempts"],
         }
+        summary = await _validate_and_store(
+            session, ach_uuid, fallback_parsed, used_sources, sources_text, source_hash
+        )
+        return {"status": "ok_fallback", "model": "none", **summary}
 
 
 @celery_app.task(
