@@ -141,6 +141,20 @@ services:
     networks:
       - wow_optimizer_network
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: /api
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - wow_optimizer_network
+
   flower:
     build:
       context: ./backend
