@@ -2,7 +2,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import TIMESTAMP, Boolean, Float, ForeignKey, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -25,6 +25,8 @@ class Route(Base, TimestampMixin):
     session_duration_minutes: Mapped[int | None] = mapped_column(Integer)
     solo_only: Mapped[bool | None] = mapped_column(Boolean)
     archived_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
+    blocked_pool: Mapped[dict | None] = mapped_column(JSONB)
+    deferred_pool: Mapped[dict | None] = mapped_column(JSONB)
 
     stops = relationship(
         "RouteStop",
@@ -58,6 +60,7 @@ class RouteStop(Base):
     completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     skipped: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
+    community_tips: Mapped[dict | None] = mapped_column(JSONB)
 
     route = relationship("Route", back_populates="stops")
     achievement = relationship("Achievement")

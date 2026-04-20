@@ -1,0 +1,180 @@
+{
+  "_comment": "Zone connectivity data — editable without code changes. Costs in minutes.",
+  "portal_hubs": {
+    "Stormwind City": {
+      "faction": "Alliance",
+      "portals_to": [
+        "Boralus",
+        "Oribos",
+        "Valdrakken",
+        "Dornogal",
+        "Dalaran (Legion)",
+        "Jade Forest",
+        "Shattrath City",
+        "Exodar",
+        "Ironforge",
+        "Darnassus",
+        "Stormshield"
+      ]
+    },
+    "Orgrimmar": {
+      "faction": "Horde",
+      "portals_to": [
+        "Dazar'alor",
+        "Oribos",
+        "Valdrakken",
+        "Dornogal",
+        "Dalaran (Legion)",
+        "Jade Forest",
+        "Shattrath City",
+        "Silvermoon City",
+        "Thunder Bluff",
+        "Undercity",
+        "Warspear"
+      ]
+    },
+    "Dalaran (Legion)": {
+      "faction": "neutral",
+      "portals_to": [
+        "Stormwind City",
+        "Orgrimmar",
+        "Azsuna",
+        "Val'sharah",
+        "Highmountain",
+        "Stormheim",
+        "Suramar"
+      ]
+    },
+    "Oribos": {
+      "faction": "neutral",
+      "portals_to": [
+        "Stormwind City",
+        "Orgrimmar",
+        "Bastion",
+        "Maldraxxus",
+        "Ardenweald",
+        "Revendreth",
+        "Zereth Mortis"
+      ]
+    },
+    "Valdrakken": {
+      "faction": "neutral",
+      "portals_to": [
+        "Stormwind City",
+        "Orgrimmar",
+        "The Waking Shores",
+        "Ohn'ahran Plains",
+        "The Azure Span",
+        "Thaldraszus",
+        "Zaralek Cavern",
+        "Emerald Dream"
+      ]
+    },
+    "Dornogal": {
+      "faction": "neutral",
+      "portals_to": [
+        "Stormwind City",
+        "Orgrimmar",
+        "Isle of Dorn",
+        "The Ringing Deeps",
+        "Hallowfall",
+        "Azj-Kahet"
+      ]
+    },
+    "Shattrath City": {
+      "faction": "neutral",
+      "portals_to": [
+        "Stormwind City",
+        "Orgrimmar"
+      ]
+    },
+    "Boralus": {
+      "faction": "Alliance",
+      "portals_to": [
+        "Stormwind City"
+      ]
+    },
+    "Dazar'alor": {
+      "faction": "Horde",
+      "portals_to": [
+        "Orgrimmar"
+      ]
+    }
+  },
+  "transport_links": [
+    {"from": "Stormwind City", "to": "Borean Tundra", "type": "boat", "cost": 10},
+    {"from": "Stormwind City", "to": "Darkshore", "type": "boat", "cost": 10},
+    {"from": "Orgrimmar", "to": "Borean Tundra", "type": "zeppelin", "cost": 10},
+    {"from": "Orgrimmar", "to": "Tirisfal Glades", "type": "zeppelin", "cost": 10},
+    {"from": "Orgrimmar", "to": "Stranglethorn Vale", "type": "zeppelin", "cost": 10},
+    {"from": "Stormwind City", "to": "Stranglethorn Vale", "type": "boat", "cost": 10}
+  ],
+  "continent_zones": {
+    "Eastern Kingdoms": [
+      "Stormwind City", "Ironforge", "Darnassus", "Elwynn Forest", "Westfall",
+      "Redridge Mountains", "Duskwood", "Stranglethorn Vale", "Burning Steppes",
+      "Searing Gorge", "Badlands", "Swamp of Sorrows", "Blasted Lands",
+      "Tirisfal Glades", "Silverpine Forest", "Hillsbrad Foothills",
+      "Arathi Highlands", "The Hinterlands", "Western Plaguelands",
+      "Eastern Plaguelands", "Eversong Woods", "Ghostlands", "Silvermoon City",
+      "Loch Modan", "Wetlands", "Twilight Highlands", "Deadwind Pass"
+    ],
+    "Kalimdor": [
+      "Orgrimmar", "Thunder Bluff", "Exodar", "Durotar", "Mulgore",
+      "The Barrens", "Ashenvale", "Stonetalon Mountains", "Desolace",
+      "Feralas", "Thousand Needles", "Tanaris", "Un'Goro Crater", "Silithus",
+      "Winterspring", "Felwood", "Darkshore", "Teldrassil", "Azshara",
+      "Dustwallow Marsh", "Uldum", "Mount Hyjal"
+    ],
+    "Northrend": [
+      "Borean Tundra", "Howling Fjord", "Dragonblight", "Grizzly Hills",
+      "Zul'Drak", "Sholazar Basin", "The Storm Peaks", "Icecrown",
+      "Crystalsong Forest", "Dalaran (Northrend)"
+    ],
+    "Pandaria": [
+      "Jade Forest", "Valley of the Four Winds", "Krasarang Wilds",
+      "Kun-Lai Summit", "Townlong Steppes", "Dread Wastes",
+      "Vale of Eternal Blossoms", "Timeless Isle", "Isle of Thunder"
+    ],
+    "Draenor": [
+      "Frostfire Ridge", "Shadowmoon Valley (Draenor)", "Gorgrond",
+      "Talador", "Spires of Arak", "Nagrand (Draenor)", "Tanaan Jungle",
+      "Stormshield", "Warspear"
+    ],
+    "Broken Isles": [
+      "Azsuna", "Val'sharah", "Highmountain", "Stormheim", "Suramar",
+      "Dalaran (Legion)", "Broken Shore", "Argus"
+    ],
+    "Kul Tiras": [
+      "Boralus", "Tiragarde Sound", "Drustvar", "Stormsong Valley"
+    ],
+    "Zandalar": [
+      "Dazar'alor", "Zuldazar", "Nazmir", "Vol'dun"
+    ],
+    "Shadowlands": [
+      "Oribos", "Bastion", "Maldraxxus", "Ardenweald", "Revendreth",
+      "The Maw", "Korthia", "Zereth Mortis"
+    ],
+    "Dragon Isles": [
+      "The Waking Shores", "Ohn'ahran Plains", "The Azure Span",
+      "Thaldraszus", "Valdrakken", "Zaralek Cavern", "Emerald Dream",
+      "Forbidden Reach"
+    ],
+    "Khaz Algar": [
+      "Dornogal", "Isle of Dorn", "The Ringing Deeps", "Hallowfall", "Azj-Kahet"
+    ]
+  },
+  "expansion_zones": {
+    "Classic": ["Eastern Kingdoms", "Kalimdor"],
+    "The Burning Crusade": ["Outland"],
+    "Wrath of the Lich King": ["Northrend"],
+    "Cataclysm": ["Eastern Kingdoms", "Kalimdor"],
+    "Mists of Pandaria": ["Pandaria"],
+    "Warlords of Draenor": ["Draenor"],
+    "Legion": ["Broken Isles"],
+    "Battle for Azeroth": ["Kul Tiras", "Zandalar"],
+    "Shadowlands": ["Shadowlands"],
+    "Dragonflight": ["Dragon Isles"],
+    "The War Within": ["Khaz Algar"]
+  }
+}

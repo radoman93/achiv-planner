@@ -53,8 +53,16 @@ from app.api.auth import router as auth_router  # noqa: E402
 from app.api.auth_battlenet import router as auth_bnet_router  # noqa: E402
 from app.api.pipeline import router as pipeline_router  # noqa: E402
 from app.api.dashboard import router as dashboard_router  # noqa: E402
+from app.api.achievements import router as achievements_router  # noqa: E402
+from app.api.characters import router as characters_router  # noqa: E402
+from app.api.routes import router as routes_router  # noqa: E402
+from app.api.users import router as users_router  # noqa: E402
 
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(auth_bnet_router, prefix="/api/auth", tags=["auth"])
 app.include_router(pipeline_router, prefix="/api/pipeline", tags=["pipeline"])
 app.include_router(dashboard_router, prefix="/api/dashboard", tags=["dashboard"])
+app.include_router(achievements_router, prefix="/api/achievements", tags=["achievements"])
+app.include_router(characters_router, prefix="/api/characters", tags=["characters"])
+app.include_router(routes_router, prefix="/api/routes", tags=["routes"])
+app.include_router(users_router, prefix="/api/users", tags=["users"])
