@@ -23,7 +23,7 @@ services:
       timeout: 5s
       retries: 10
     ports:
-      - "5432:5432"
+      - "5433:5432"
     networks:
       - wow_optimizer_network
 
@@ -39,7 +39,7 @@ services:
       timeout: 5s
       retries: 10
     ports:
-      - "6379:6379"
+      - "6380:6379"
     networks:
       - wow_optimizer_network
 
