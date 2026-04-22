@@ -213,27 +213,23 @@ async def generate_route(
 
     _t = _step("load_character", _t_start)
 
-    # Guardrail: a Battle.net-connected user whose character has no
-    # achievement-state rows hasn't synced yet — generating a route here
-    # would silently include already-earned achievements.
-    if user.battlenet_token:
-        state_probe = await db.execute(
-            select(UserAchievementState.id)
-            .where(UserAchievementState.character_id == body.character_id)
-            .limit(1)
+    # Guardrail: a Battle.net-connected user whose character has never been
+    # synced would silently get a route that includes already-earned
+    # achievements. last_synced_at is set on every sync attempt — including
+    # empty ones for characters with no public Blizzard profile — so it's a
+    # reliable signal for "we tried to pull completions for this character".
+    if user.battlenet_token and character.last_synced_at is None:
+        raise HTTPException(
+            409,
+            detail={
+                "error": "character_not_synced",
+                "character_id": str(body.character_id),
+                "message": (
+                    "This character has not been synced with Battle.net yet. "
+                    "Trigger a sync before generating a route."
+                ),
+            },
         )
-        if state_probe.scalar_one_or_none() is None:
-            raise HTTPException(
-                409,
-                detail={
-                    "error": "character_not_synced",
-                    "character_id": str(body.character_id),
-                    "message": (
-                        "This character has not been synced with Battle.net yet. "
-                        "Trigger a sync before generating a route."
-                    ),
-                },
-            )
 
     # Rate limit check
     await _check_rate_limit(user)

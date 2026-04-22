@@ -328,7 +328,41 @@ async def run_character_sync(
             import httpx
 
             if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 404:
-                raise SyncError("character_not_found", "Blizzard returned 404 for character")
+                # Character exists on the Battle.net account list but has no
+                # public achievement profile (low-level alt, deleted, recently
+                # transferred, etc.). Treat as a successful empty sync so the
+                # user can still generate a route — we just won't have any
+                # completion data for this character.
+                logger.warning(
+                    "sync.character_no_public_profile",
+                    character_id=character_id,
+                    realm=char.realm,
+                    name=char.name,
+                )
+                char.last_synced_at = datetime.now(timezone.utc)
+                await db.commit()
+                completed_at_iso = datetime.now(timezone.utc).isoformat()
+                await write_progress(
+                    redis,
+                    job_id,
+                    {
+                        "status": "completed",
+                        "processed": 0,
+                        "total": 0,
+                        "percent": 100,
+                        "started_at": started_at,
+                        "completed_at": completed_at_iso,
+                        "newly_completed_count": 0,
+                        "newly_completed_ids": [],
+                        "inserted": 0,
+                        "updated": 0,
+                        "skipped_unknown": 0,
+                        "completion_pct": 0.0,
+                        "note": "no_public_profile",
+                    },
+                    ttl=SYNC_PROGRESS_TTL_SECONDS,
+                )
+                return result
             # Let Celery handle retry for transient errors (rate limits, 5xx).
             raise
 
