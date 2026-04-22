@@ -2,16 +2,52 @@
 
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import api, { type ApiEnvelope, type AchievementSummary, type AchievementDetail } from "@/lib/api-client";
+import api, {
+  type ApiEnvelope,
+  type AchievementSummary,
+  type AchievementDetail,
+} from "@/lib/api-client";
 import { useAuth } from "@/lib/auth";
-import { cn, TIER_COLORS } from "@/lib/utils";
-import { Search, X, Filter, ExternalLink, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  Search,
+  X,
+  Filter,
+  ExternalLink,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+} from "lucide-react";
 
 const EXPANSIONS = [
-  "Classic", "The Burning Crusade", "Wrath of the Lich King", "Cataclysm",
-  "Mists of Pandaria", "Warlords of Draenor", "Legion", "Battle for Azeroth",
-  "Shadowlands", "Dragonflight", "The War Within",
+  "Classic",
+  "The Burning Crusade",
+  "Wrath of the Lich King",
+  "Cataclysm",
+  "Mists of Pandaria",
+  "Warlords of Draenor",
+  "Legion",
+  "Battle for Azeroth",
+  "Shadowlands",
+  "Dragonflight",
+  "The War Within",
 ];
+
+const CONF_COLOR: Record<string, string> = {
+  verified: "#8FBF7A",
+  high: "#D4A04A",
+  medium: "#C88A5A",
+  low: "#8A6B6B",
+  research_required: "#C86464",
+};
+
+const CONF_LABEL: Record<string, string> = {
+  verified: "Verified",
+  high: "Trusted",
+  medium: "Community",
+  low: "Unverified",
+  research_required: "Research",
+};
 
 export default function BrowsePage() {
   useAuth();
@@ -20,54 +56,62 @@ export default function BrowsePage() {
   const [page, setPage] = useState(1);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [selectedDetail, setSelectedDetail] = useState<string | null>(null);
-
-  // Filters
   const [expansionFilter, setExpansionFilter] = useState<string[]>([]);
   const [isSeasonal, setIsSeasonal] = useState<boolean | undefined>(undefined);
   const [soloOnly, setSoloOnly] = useState<boolean | undefined>(undefined);
-  const [minPoints, setMinPoints] = useState<number | undefined>(undefined);
-  const [maxPoints, setMaxPoints] = useState<number | undefined>(undefined);
 
-  // Debounce search
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 300);
     return () => clearTimeout(t);
   }, [search]);
 
-  // Reset page on filter change
-  useEffect(() => { setPage(1); }, [debouncedSearch, expansionFilter, isSeasonal, soloOnly, minPoints, maxPoints]);
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, expansionFilter, isSeasonal, soloOnly]);
 
-  // Main query — search or browse
   const { data, isLoading } = useQuery({
-    queryKey: ["achievements", "browse", debouncedSearch, page, expansionFilter, isSeasonal, soloOnly, minPoints, maxPoints],
+    queryKey: [
+      "achievements",
+      "browse",
+      debouncedSearch,
+      page,
+      expansionFilter,
+      isSeasonal,
+      soloOnly,
+    ],
     queryFn: async () => {
       if (debouncedSearch.length >= 2) {
-        const res = await api.get<ApiEnvelope<{ achievements: AchievementSummary[]; total: number }>>(
-          `/achievements/search?q=${encodeURIComponent(debouncedSearch)}&limit=50`,
-        );
+        const res = await api.get<
+          ApiEnvelope<{ achievements: AchievementSummary[]; total: number }>
+        >(`/achievements/search?q=${encodeURIComponent(debouncedSearch)}&limit=50`);
         return { ...res.data.data, page: 1, per_page: 50, total_pages: 1 };
       }
       const params = new URLSearchParams();
       params.set("page", String(page));
-      params.set("per_page", "21");
+      params.set("per_page", "24");
       if (expansionFilter.length === 1) params.set("expansion", expansionFilter[0]);
       if (isSeasonal !== undefined) params.set("is_seasonal", String(isSeasonal));
       if (soloOnly === true) params.set("requires_group", "false");
-      if (minPoints !== undefined) params.set("min_points", String(minPoints));
-      if (maxPoints !== undefined) params.set("max_points", String(maxPoints));
-      const res = await api.get<ApiEnvelope<{ achievements: AchievementSummary[]; total: number; page: number; per_page: number; total_pages: number }>>(
-        `/achievements?${params.toString()}`,
-      );
+      const res = await api.get<
+        ApiEnvelope<{
+          achievements: AchievementSummary[];
+          total: number;
+          page: number;
+          per_page: number;
+          total_pages: number;
+        }>
+      >(`/achievements?${params.toString()}`);
       return res.data.data;
     },
   });
 
-  // Detail query
   const { data: detail, isLoading: detailLoading } = useQuery<AchievementDetail | null>({
     queryKey: ["achievement", "detail", selectedDetail],
     queryFn: async () => {
       if (!selectedDetail) return null;
-      const res = await api.get<ApiEnvelope<AchievementDetail>>(`/achievements/${selectedDetail}`);
+      const res = await api.get<ApiEnvelope<AchievementDetail>>(
+        `/achievements/${selectedDetail}`,
+      );
       return res.data.data;
     },
     enabled: !!selectedDetail,
@@ -77,8 +121,6 @@ export default function BrowsePage() {
     setExpansionFilter([]);
     setIsSeasonal(undefined);
     setSoloOnly(undefined);
-    setMinPoints(undefined);
-    setMaxPoints(undefined);
   };
 
   const toggleExpansion = (exp: string) => {
@@ -88,328 +130,436 @@ export default function BrowsePage() {
   };
 
   return (
-    <div className="relative">
-      <h1 className="text-2xl font-bold mb-6">Achievement Browser</h1>
+    <div className="fade-in relative">
+      {/* Page header */}
+      <div className="mb-7">
+        <div className="font-mono text-[10px] tracking-[0.2em] uppercase text-gold-2 mb-1.5 flex items-center gap-2">
+          <span
+            className="inline-block w-[5px] h-[5px]"
+            style={{ transform: "rotate(45deg)", background: "var(--gold-2)" }}
+          />
+          Library
+        </div>
+        <h1 className="font-display text-[28px] font-semibold tracking-tight m-0 mb-1.5">
+          Browse achievements
+        </h1>
+        <p className="text-[13px] text-fg-3 m-0 max-w-[68ch]">
+          Every achievement Blizzard exposes, indexed, scored, and cross-referenced with Wowhead
+          & community sources.
+        </p>
+      </div>
 
-      {/* Search bar */}
-      <div className="relative mb-6">
-        <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search achievements..."
-          className="w-full bg-surface border border-border rounded-lg pl-10 pr-4 py-3 text-text-primary focus:outline-none focus:border-primary"
-        />
-        {search && (
-          <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary hover:text-text-primary">
-            <X size={16} />
+      {/* Filter bar */}
+      <div
+        className="flex items-center gap-2 mb-5 p-3"
+        style={{
+          background: "var(--bg-1)",
+          border: "1px solid var(--border-1)",
+          borderRadius: "var(--r-md)",
+        }}
+      >
+        <div className="relative flex-1 max-w-md">
+          <Search
+            size={14}
+            className="absolute top-1/2 -translate-y-1/2"
+            style={{ left: 10, color: "var(--fg-3)" }}
+          />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search achievements…"
+            className="w-full"
+            style={{
+              background: "var(--bg-2)",
+              border: "1px solid var(--border-2)",
+              borderRadius: "var(--r-md)",
+              padding: "8px 32px 8px 32px",
+              fontSize: 13,
+              color: "var(--fg-1)",
+              outline: "none",
+            }}
+          />
+          {search && (
+            <button
+              onClick={() => setSearch("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-fg-3 hover:text-fg-1"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+
+        <button
+          onClick={() => setFiltersOpen((v) => !v)}
+          className={cn("btn", filtersOpen && "btn-primary")}
+          style={{ padding: "7px 12px", fontSize: 12 }}
+        >
+          <Filter size={12} /> Filters
+        </button>
+
+        {(expansionFilter.length > 0 || isSeasonal !== undefined || soloOnly !== undefined) && (
+          <button
+            onClick={clearFilters}
+            className="font-mono text-[11px] text-fg-3 hover:text-gold-1 uppercase tracking-[0.08em]"
+          >
+            Clear
           </button>
         )}
       </div>
 
-      <div className="flex gap-6">
-        {/* Filter panel — desktop sidebar */}
-        <aside className={cn("hidden lg:block w-56 shrink-0")}>
-          <FilterPanel
-            expansionFilter={expansionFilter}
-            toggleExpansion={toggleExpansion}
-            isSeasonal={isSeasonal}
-            setIsSeasonal={setIsSeasonal}
-            soloOnly={soloOnly}
-            setSoloOnly={setSoloOnly}
-            clearFilters={clearFilters}
-          />
-        </aside>
-
-        {/* Mobile filter button */}
-        <button
-          onClick={() => setFiltersOpen(true)}
-          className="lg:hidden fixed bottom-20 right-4 z-30 bg-primary text-background rounded-full p-3 shadow-lg"
+      {/* Filter panel */}
+      {filtersOpen && (
+        <div
+          className="p-5 mb-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3"
+          style={{
+            background: "var(--bg-1)",
+            border: "1px solid var(--border-1)",
+            borderRadius: "var(--r-md)",
+          }}
         >
-          <Filter size={20} />
-        </button>
-
-        {/* Mobile filter sheet */}
-        {filtersOpen && (
-          <div className="lg:hidden fixed inset-0 z-50 flex flex-col">
-            <div className="flex-1 bg-black/50" onClick={() => setFiltersOpen(false)} />
-            <div className="bg-surface border-t border-border rounded-t-xl p-6 max-h-[70vh] overflow-y-auto">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold">Filters</h3>
-                <button onClick={() => setFiltersOpen(false)}><X size={20} /></button>
-              </div>
-              <FilterPanel
-                expansionFilter={expansionFilter}
-                toggleExpansion={toggleExpansion}
-                isSeasonal={isSeasonal}
-                setIsSeasonal={setIsSeasonal}
-                soloOnly={soloOnly}
-                setSoloOnly={setSoloOnly}
-                clearFilters={clearFilters}
-              />
+          <div>
+            <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-3 mb-2">
+              Expansion
+            </div>
+            <div className="max-h-40 overflow-y-auto grid gap-1.5">
+              {EXPANSIONS.map((exp) => (
+                <label
+                  key={exp}
+                  className="flex items-center gap-2 text-[12px] cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={expansionFilter.includes(exp)}
+                    onChange={() => toggleExpansion(exp)}
+                    className="accent-[var(--gold-1)]"
+                  />
+                  <span>{exp}</span>
+                </label>
+              ))}
             </div>
           </div>
-        )}
-
-        {/* Achievement grid */}
-        <div className="flex-1 min-w-0">
-          {isLoading ? (
-            <div className="flex justify-center py-12"><Loader2 className="animate-spin text-primary" size={24} /></div>
-          ) : data && data.achievements.length > 0 ? (
-            <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                {data.achievements.map((ach) => (
-                  <button
-                    key={ach.id}
-                    onClick={() => setSelectedDetail(ach.id)}
-                    className="bg-surface rounded-lg border border-border p-4 text-left hover:border-primary transition-colors"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="w-8 h-8 rounded bg-surface-elevated flex items-center justify-center text-xs font-mono text-primary shrink-0">
-                        {ach.points}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-primary truncate">{ach.name}</p>
-                        <p className="text-xs text-text-secondary truncate">{ach.category}</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          {ach.zone_name && <span className="text-[10px] text-text-secondary">{ach.zone_name}</span>}
-                          <span className={cn("w-1.5 h-1.5 rounded-full", TIER_COLORS[ach.confidence_tier])} />
-                        </div>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-
-              {/* Pagination */}
-              {data.total_pages > 1 && (
-                <div className="flex items-center justify-center gap-4 mt-6">
-                  <button
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    disabled={page <= 1}
-                    className="p-2 rounded bg-surface-elevated disabled:opacity-30"
-                  >
-                    <ChevronLeft size={16} />
-                  </button>
-                  <span className="text-sm text-text-secondary">
-                    Page {data.page} of {data.total_pages}
-                  </span>
-                  <button
-                    onClick={() => setPage((p) => Math.min(data.total_pages, p + 1))}
-                    disabled={page >= data.total_pages}
-                    className="p-2 rounded bg-surface-elevated disabled:opacity-30"
-                  >
-                    <ChevronRight size={16} />
-                  </button>
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="text-center py-12">
-              <p className="text-text-secondary mb-2">No results found</p>
-              <button onClick={clearFilters} className="text-sm text-primary hover:underline">Clear all filters</button>
+          <div>
+            <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-3 mb-2">
+              Type
             </div>
-          )}
+            <label className="flex items-center gap-2 text-[12px] cursor-pointer mb-2">
+              <input
+                type="checkbox"
+                checked={isSeasonal === true}
+                onChange={() =>
+                  setIsSeasonal(isSeasonal === true ? undefined : true)
+                }
+                className="accent-[var(--gold-1)]"
+              />
+              Seasonal only
+            </label>
+            <label className="flex items-center gap-2 text-[12px] cursor-pointer">
+              <input
+                type="checkbox"
+                checked={soloOnly === true}
+                onChange={() => setSoloOnly(soloOnly === true ? undefined : true)}
+                className="accent-[var(--gold-1)]"
+              />
+              Solo-able only
+            </label>
+          </div>
         </div>
+      )}
+
+      {/* Table card */}
+      <div
+        style={{
+          background: "var(--bg-1)",
+          border: "1px solid var(--border-1)",
+          borderRadius: "var(--r-md)",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          className="grid px-4 py-2.5 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-3"
+          style={{
+            borderBottom: "1px solid var(--border-1)",
+            gridTemplateColumns: "minmax(0, 1fr) 120px 100px 60px",
+          }}
+        >
+          <div>Achievement</div>
+          <div>Zone</div>
+          <div>Confidence</div>
+          <div className="text-right">Pts</div>
+        </div>
+
+        {isLoading ? (
+          <div className="flex justify-center py-12">
+            <Loader2 className="animate-spin text-gold-1" size={24} />
+          </div>
+        ) : data && data.achievements.length > 0 ? (
+          data.achievements.map((ach) => (
+            <AchievementRow
+              key={ach.id}
+              ach={ach}
+              onClick={() => setSelectedDetail(ach.id)}
+            />
+          ))
+        ) : (
+          <div className="py-10 text-center text-fg-3">
+            <p className="mb-2">No results found</p>
+            <button
+              onClick={clearFilters}
+              className="text-sm text-gold-1 hover:underline"
+            >
+              Clear all filters
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* Pagination */}
+      {data && data.total_pages > 1 && (
+        <div className="flex items-center justify-center gap-3 mt-6">
+          <button
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page <= 1}
+            className="btn"
+            style={{ padding: "6px 10px", fontSize: 12, opacity: page <= 1 ? 0.3 : 1 }}
+          >
+            <ChevronLeft size={14} />
+          </button>
+          <span className="font-mono text-[12px] text-fg-3">
+            Page {data.page} of {data.total_pages}
+          </span>
+          <button
+            onClick={() => setPage((p) => Math.min(data.total_pages, p + 1))}
+            disabled={page >= data.total_pages}
+            className="btn"
+            style={{
+              padding: "6px 10px",
+              fontSize: 12,
+              opacity: page >= data.total_pages ? 0.3 : 1,
+            }}
+          >
+            <ChevronRight size={14} />
+          </button>
+        </div>
+      )}
 
       {/* Detail drawer */}
       {selectedDetail && (
-        <DetailDrawer detail={detail} loading={detailLoading} onClose={() => setSelectedDetail(null)} />
+        <DetailDrawer
+          detail={detail}
+          loading={detailLoading}
+          onClose={() => setSelectedDetail(null)}
+        />
       )}
     </div>
   );
 }
 
-// ─── Filter Panel ──────────────────────────────────────────
-
-function FilterPanel({
-  expansionFilter, toggleExpansion, isSeasonal, setIsSeasonal, soloOnly, setSoloOnly, clearFilters,
+function AchievementRow({
+  ach,
+  onClick,
 }: {
-  expansionFilter: string[];
-  toggleExpansion: (exp: string) => void;
-  isSeasonal: boolean | undefined;
-  setIsSeasonal: (v: boolean | undefined) => void;
-  soloOnly: boolean | undefined;
-  setSoloOnly: (v: boolean | undefined) => void;
-  clearFilters: () => void;
+  ach: AchievementSummary;
+  onClick: () => void;
 }) {
+  const confColor = CONF_COLOR[ach.confidence_tier] ?? "#8A6B6B";
+  const confLabel = CONF_LABEL[ach.confidence_tier] ?? "—";
   return (
-    <div className="space-y-4">
-      <div>
-        <p className="text-xs font-semibold text-text-secondary mb-2">Expansion</p>
-        <div className="space-y-1 max-h-48 overflow-y-auto">
-          {EXPANSIONS.map((exp) => (
-            <label key={exp} className="flex items-center gap-2 text-xs cursor-pointer">
-              <input
-                type="checkbox"
-                checked={expansionFilter.includes(exp)}
-                onChange={() => toggleExpansion(exp)}
-                className="accent-primary"
-              />
-              <span className="text-text-primary">{exp}</span>
-            </label>
-          ))}
+    <button
+      onClick={onClick}
+      className="grid items-center gap-3 px-4 py-3 w-full text-left border-t hover:bg-bg-2 transition-colors"
+      style={{
+        borderColor: "var(--border-1)",
+        gridTemplateColumns: "minmax(0, 1fr) 120px 100px 60px",
+      }}
+    >
+      <div className="min-w-0 flex items-center gap-3">
+        <span
+          className="conf-dot shrink-0"
+          style={{ background: confColor }}
+          title={confLabel}
+        />
+        <div className="min-w-0">
+          <div className="text-[13px] font-medium truncate">{ach.name}</div>
+          {ach.category && (
+            <div className="font-mono text-[11px] text-fg-3 truncate">
+              {ach.category}
+              {ach.is_seasonal && (
+                <span className="ml-2 text-ember">· Seasonal</span>
+              )}
+            </div>
+          )}
         </div>
       </div>
-
-      <div>
-        <p className="text-xs font-semibold text-text-secondary mb-2">Toggles</p>
-        <label className="flex items-center gap-2 text-xs cursor-pointer mb-2">
-          <input type="checkbox" checked={isSeasonal === true} onChange={() => setIsSeasonal(isSeasonal === true ? undefined : true)} className="accent-primary" />
-          Seasonal only
-        </label>
-        <label className="flex items-center gap-2 text-xs cursor-pointer">
-          <input type="checkbox" checked={soloOnly === true} onChange={() => setSoloOnly(soloOnly === true ? undefined : true)} className="accent-primary" />
-          Solo only
-        </label>
+      <div className="font-mono text-[11px] text-fg-3 truncate">
+        {ach.zone_name ?? "—"}
       </div>
-
-      <button onClick={clearFilters} className="text-xs text-primary hover:underline">Clear all filters</button>
-    </div>
+      <div className="font-mono text-[11px]" style={{ color: confColor }}>
+        {confLabel}
+      </div>
+      <div className="text-right font-display text-[14px] text-gold-1 font-semibold">
+        {ach.points}
+      </div>
+    </button>
   );
 }
 
-// ─── Detail Drawer ──────────────────────────────────────────
-
-function DetailDrawer({ detail, loading, onClose }: { detail: AchievementDetail | null | undefined; loading: boolean; onClose: () => void }) {
-  // ESC to close
+function DetailDrawer({
+  detail,
+  loading,
+  onClose,
+}: {
+  detail: AchievementDetail | null | undefined;
+  loading: boolean;
+  onClose: () => void;
+}) {
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [onClose]);
 
   return (
     <>
-      {/* Backdrop */}
-      <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
-
-      {/* Drawer — side on desktop, full-screen on mobile */}
-      <div className="fixed inset-y-0 right-0 w-full sm:w-[420px] bg-surface border-l border-border z-50 overflow-y-auto p-6">
-        <button onClick={onClose} className="absolute top-4 right-4 text-text-secondary hover:text-text-primary">
+      <div
+        className="fixed inset-0 z-40"
+        style={{ background: "rgba(0, 0, 0, 0.6)" }}
+        onClick={onClose}
+      />
+      <div
+        className="fixed inset-y-0 right-0 w-full sm:w-[440px] z-50 overflow-y-auto p-6"
+        style={{
+          background: "var(--bg-1)",
+          borderLeft: "1px solid var(--border-2)",
+        }}
+      >
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 text-fg-3 hover:text-fg-1"
+        >
           <X size={20} />
         </button>
 
         {loading ? (
-          <div className="flex justify-center py-12"><Loader2 className="animate-spin text-primary" size={24} /></div>
+          <div className="flex justify-center py-12">
+            <Loader2 className="animate-spin text-gold-1" size={24} />
+          </div>
         ) : detail ? (
-          <div className="space-y-6">
-            {/* Header */}
+          <div className="grid gap-6">
             <div>
-              <h2 className="text-lg font-bold text-primary pr-8">{detail.name}</h2>
-              <div className="flex items-center gap-2 mt-1">
-                <span className="font-mono text-sm text-primary">{detail.points} pts</span>
-                <span className={cn("text-xs px-2 py-0.5 rounded capitalize", TIER_COLORS[detail.confidence_tier], "text-background")}>
-                  {detail.confidence_tier.replace("_", " ")}
+              <div className="font-mono text-[10px] tracking-[0.2em] uppercase text-gold-2 mb-2">
+                Achievement
+              </div>
+              <h2 className="font-display text-[22px] font-semibold m-0 mb-2 pr-8">
+                {detail.name}
+              </h2>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-display text-[16px] text-gold-1 font-semibold">
+                  {detail.points} pts
+                </span>
+                <span
+                  className="font-mono text-[10px] uppercase tracking-[0.08em] px-2 py-0.5 rounded"
+                  style={{
+                    background: "var(--bg-3)",
+                    color: CONF_COLOR[detail.confidence_tier] ?? "var(--fg-3)",
+                    border: `1px solid ${
+                      CONF_COLOR[detail.confidence_tier] ?? "var(--border-2)"
+                    }`,
+                  }}
+                >
+                  {CONF_LABEL[detail.confidence_tier] ?? "—"}
                 </span>
               </div>
             </div>
 
-            {/* Description */}
             {detail.description && (
-              <p className="text-sm text-text-secondary">{detail.description}</p>
+              <p className="text-[13px] text-fg-2 leading-[1.6] m-0">
+                {detail.description}
+              </p>
             )}
 
-            {/* Meta */}
             <div className="flex flex-wrap gap-2 text-xs">
-              {detail.category && <span className="bg-surface-elevated px-2 py-1 rounded">{detail.category}</span>}
-              {detail.expansion && <span className="bg-surface-elevated px-2 py-1 rounded">{detail.expansion}</span>}
-              {detail.zone && <span className="bg-surface-elevated px-2 py-1 rounded">{detail.zone.name}</span>}
-              {detail.is_seasonal && <span className="bg-warning/20 text-warning px-2 py-1 rounded">Seasonal</span>}
-              {detail.requires_group && <span className="bg-alliance/20 text-alliance px-2 py-1 rounded">Group</span>}
+              {detail.category && <Chip>{detail.category}</Chip>}
+              {detail.expansion && <Chip>{detail.expansion}</Chip>}
+              {detail.zone && <Chip>{detail.zone.name}</Chip>}
+              {detail.is_seasonal && (
+                <Chip
+                  style={{
+                    background: "rgba(224, 138, 60, 0.1)",
+                    color: "var(--ember)",
+                    border: "1px solid rgba(224, 138, 60, 0.3)",
+                  }}
+                >
+                  Seasonal
+                </Chip>
+              )}
+              {detail.requires_group && (
+                <Chip
+                  style={{
+                    background: "rgba(74, 120, 196, 0.1)",
+                    color: "var(--alliance)",
+                    border: "1px solid rgba(74, 120, 196, 0.3)",
+                  }}
+                >
+                  Group
+                </Chip>
+              )}
             </div>
 
-            {/* Guide steps */}
-            {detail.guide && detail.guide.steps && detail.guide.steps.length > 0 ? (
+            {detail.guide?.steps && detail.guide.steps.length > 0 && (
               <div>
-                <h3 className="text-sm font-semibold mb-2">Guide Steps</h3>
-                <ol className="space-y-2">
+                <h3 className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-3 m-0 mb-3">
+                  Guide Steps
+                </h3>
+                <ol className="grid gap-2 m-0 pl-0 list-none">
                   {detail.guide.steps.map((s, i) => (
-                    <li key={i} className="text-sm text-text-secondary flex gap-2">
-                      <span className="text-xs font-mono text-primary shrink-0">{i + 1}.</span>
+                    <li
+                      key={i}
+                      className="text-[13px] text-fg-2 flex gap-3"
+                    >
+                      <span className="font-mono text-xs text-gold-1 shrink-0">
+                        {i + 1}.
+                      </span>
                       <span>{s.label || s.description}</span>
                     </li>
                   ))}
                 </ol>
               </div>
-            ) : (
-              <div>
-                <p className="text-sm text-text-secondary">No guide available.</p>
-                <a
-                  href={`https://www.wowhead.com/achievement=${detail.blizzard_id}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm text-primary hover:underline inline-flex items-center gap-1 mt-1"
-                >
-                  View on Wowhead <ExternalLink size={12} />
-                </a>
-              </div>
             )}
 
-            {/* Community tips */}
             {detail.comments && detail.comments.length > 0 && (
               <div>
-                <h3 className="text-sm font-semibold mb-2">Community Tips</h3>
-                <div className="space-y-2">
+                <h3 className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-3 m-0 mb-3">
+                  Community Tips
+                </h3>
+                <div className="grid gap-2">
                   {detail.comments.slice(0, 3).map((c, i) => (
-                    <div key={i} className="bg-surface-elevated rounded p-3 text-xs text-text-secondary">
+                    <div
+                      key={i}
+                      className="p-3 text-[12px] text-fg-2"
+                      style={{
+                        background: "var(--bg-2)",
+                        border: "1px solid var(--border-1)",
+                        borderRadius: "var(--r-md)",
+                      }}
+                    >
                       {c.text}
-                      {c.author && <p className="text-[10px] mt-1 text-text-secondary/60">— {c.author}</p>}
+                      {c.author && (
+                        <p className="text-[10px] mt-1 text-fg-3 m-0">— {c.author}</p>
+                      )}
                     </div>
                   ))}
                 </div>
               </div>
             )}
 
-            {/* Criteria */}
-            {detail.criteria && detail.criteria.length > 0 && (
-              <div>
-                <h3 className="text-sm font-semibold mb-2">Criteria</h3>
-                <ul className="space-y-1">
-                  {detail.criteria.map((cr) => (
-                    <li key={cr.id} className="text-xs text-text-secondary">
-                      {cr.description}
-                      {cr.required_amount && cr.required_amount > 1 && <span className="text-primary ml-1">x{cr.required_amount}</span>}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {/* Dependencies */}
-            {(detail.requires.length > 0 || detail.required_by.length > 0) && (
-              <div>
-                {detail.requires.length > 0 && (
-                  <>
-                    <h3 className="text-sm font-semibold mb-1">Requires</h3>
-                    <ul className="space-y-1 mb-3">
-                      {detail.requires.map((d) => (
-                        <li key={d.id} className="text-xs text-text-secondary">{d.name}</li>
-                      ))}
-                    </ul>
-                  </>
-                )}
-                {detail.required_by.length > 0 && (
-                  <>
-                    <h3 className="text-sm font-semibold mb-1">Required For</h3>
-                    <ul className="space-y-1">
-                      {detail.required_by.map((d) => (
-                        <li key={d.id} className="text-xs text-text-secondary">{d.name}</li>
-                      ))}
-                    </ul>
-                  </>
-                )}
-              </div>
-            )}
-
-            {/* External link */}
             <a
               href={`https://www.wowhead.com/achievement=${detail.blizzard_id}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+              className="inline-flex items-center gap-1.5 text-sm text-gold-1 hover:underline"
             >
               View on Wowhead <ExternalLink size={12} />
             </a>
@@ -417,5 +567,28 @@ function DetailDrawer({ detail, loading, onClose }: { detail: AchievementDetail 
         ) : null}
       </div>
     </>
+  );
+}
+
+function Chip({
+  children,
+  style,
+}: {
+  children: React.ReactNode;
+  style?: React.CSSProperties;
+}) {
+  return (
+    <span
+      className="px-2 py-1 text-[11px] font-mono uppercase tracking-[0.05em]"
+      style={{
+        background: "var(--bg-2)",
+        border: "1px solid var(--border-1)",
+        borderRadius: "var(--r-sm)",
+        color: "var(--fg-2)",
+        ...style,
+      }}
+    >
+      {children}
+    </span>
   );
 }
