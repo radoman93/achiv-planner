@@ -168,3 +168,46 @@ Phase: 7 — Hardening & Deployment (COMPLETE)
 Current Task: All phases complete — product is production-ready
 Last completed: Phase 6 (6.1–6.3 background jobs) + Phase 7 (7.1–7.5 hardening) on 2026-04-21
 See docs/progress.md for full status.
+
+---
+
+## Local Dev Uses Production Database (IMPORTANT — read every session)
+
+**`backend/.env` is pointed at the Coolify production Postgres & Redis** so local
+dev runs against real user data. This is the owner's explicit choice — do not
+change it back to a local DB unless asked. Concrete connection details live in
+`backend/.env` (gitignored) and in the Coolify app env (project `achiv-planner`);
+never commit them to this repo.
+
+### Guardrails — apply these EVERY session without asking
+
+1. **Never run destructive SQL/Alembic operations without explicit confirmation.**
+   That includes `alembic downgrade`, `alembic revision --autogenerate` followed by
+   `upgrade` when the revision drops columns, `TRUNCATE`, `DROP`, mass `DELETE`,
+   or anything that can't be rolled back. Show the user the statement and wait.
+2. **`alembic upgrade head` is only safe if the pending revisions are additive.**
+   Inspect `backend/alembic/versions/*.py` for any new revisions before running it;
+   if any touch live tables destructively, stop and confirm.
+3. **Treat Celery/Redis as shared with production.** Don't publish test tasks that
+   could land in the real worker queue; use `CELERY_TASK_ALWAYS_EAGER=1` or a
+   dedicated queue name if you need to exercise tasks.
+4. **Do not commit `backend/.env`** — it holds live secrets. It's already in
+   `.gitignore`; keep it that way.
+5. **If a migration or write looks risky, back up first** via
+   `./backup.sh` (project root) before proceeding.
+
+### How to start backend locally
+```bash
+# from project root
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up backend
+# OR, if you want to avoid spinning up the unused local postgres/redis containers:
+cd backend && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+### How to run migrations against production DB
+```bash
+# inspect pending revisions first
+cd backend && alembic current && alembic heads
+# then (only if safe — see guardrails above):
+alembic upgrade head
+```

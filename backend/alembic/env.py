@@ -1,13 +1,17 @@
 import asyncio
 import os
 from logging.config import fileConfig
+from pathlib import Path
 
 from alembic import context
+from dotenv import load_dotenv
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.models import Base
+
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 config = context.config
 
