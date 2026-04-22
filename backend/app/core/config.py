@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     SENTRY_DSN: Optional[str] = None
     ENVIRONMENT: str = "development"
     LOG_LEVEL: str = "INFO"
+    # Explicit override for the auth-cookie Secure flag. Leave as None to
+    # derive from ENVIRONMENT (secure in anything non-dev). Set to False
+    # when deploying to a non-HTTPS public URL — browsers silently drop
+    # Secure cookies over HTTP, which breaks OAuth login.
+    COOKIES_SECURE: Optional[bool] = None
 
     FLOWER_USER: str = "admin"
     FLOWER_PASSWORD: str = "admin"

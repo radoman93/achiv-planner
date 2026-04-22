@@ -37,6 +37,8 @@ class UserPublic(BaseModel):
 
 
 def _is_secure() -> bool:
+    if settings.COOKIES_SECURE is not None:
+        return settings.COOKIES_SECURE
     return settings.ENVIRONMENT != "development"
 
 
