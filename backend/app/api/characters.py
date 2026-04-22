@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,11 +14,13 @@ from sqlalchemy.orm import selectinload
 from app.core.auth import get_current_active_user
 from app.core.celery_app import celery_app
 from app.core.database import get_db
+from app.core.rate_limiter import character_key, limiter
 from app.core.redis import get_redis_client
 from app.models.achievement import Achievement
 from app.models.progress import UserAchievementState
 from app.models.route import Route
 from app.models.user import Character, User
+from app.services.sync_service import enqueue_character_sync
 
 router = APIRouter()
 
@@ -114,7 +116,7 @@ class CreateCharacterBody(BaseModel):
     faction: str
     class_: str = Field(alias="class")
     race: Optional[str] = None
-    level: int = Field(ge=1, le=80)
+    level: int = Field(ge=1, le=90)
     region: str = Field(default="eu")
     flying_unlocked: Optional[dict[str, bool]] = None
 
@@ -301,7 +303,10 @@ async def update_character(
 # ---------------------------------------------------------------------------
 
 @router.post("/{character_id}/sync")
+@limiter.limit("10/day", key_func=character_key)
 async def trigger_sync(
+    request: Request,
+    response: Response,
     character_id: UUID,
     user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
@@ -311,38 +316,16 @@ async def trigger_sync(
     if not user.battlenet_token:
         raise HTTPException(400, "Battle.net OAuth not connected")
 
-    # Check if sync already in progress
     redis = get_redis_client()
     try:
-        lock_key = f"sync:lock:{character_id}"
-        locked = await redis.get(lock_key)
-        if locked:
-            raise HTTPException(429, "sync already in progress for this character")
-
-        # Set lock (5 minute TTL)
-        await redis.set(lock_key, "1", ex=300)
+        acquired, job_id = await enqueue_character_sync(character_id, user.id, redis)
     finally:
         await redis.aclose()
 
-    # Queue Celery task
-    task = celery_app.send_task(
-        "pipeline.sync.achievement_sync",
-        args=[str(character_id), str(user.id)],
-        queue="sync",
-    )
+    if not acquired:
+        raise HTTPException(429, "sync already in progress for this character")
 
-    # Store progress key
-    redis2 = get_redis_client()
-    try:
-        await redis2.set(
-            f"sync:progress:{task.id}",
-            '{"status":"queued","processed":0,"total":0,"percent":0}',
-            ex=600,
-        )
-    finally:
-        await redis2.aclose()
-
-    return _ok({"job_id": task.id, "status": "queued"})
+    return _ok({"job_id": job_id, "status": "queued"})
 
 
 # ---------------------------------------------------------------------------

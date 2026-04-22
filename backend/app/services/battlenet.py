@@ -51,6 +51,10 @@ async def fetch_userinfo(access_token: str) -> dict[str, Any]:
 
 
 async def fetch_character_list(user: User, region: str, db: AsyncSession) -> list[Character]:
+    """Upsert every character returned by the Battle.net profile endpoint.
+
+    One SELECT + one batched commit — no per-character round-trips.
+    """
     host = BNET_API_HOST_TMPL.format(region=region)
     async with httpx.AsyncClient(timeout=20) as client:
         resp = await client.get(
@@ -60,32 +64,41 @@ async def fetch_character_list(user: User, region: str, db: AsyncSession) -> lis
         )
     resp.raise_for_status()
     data = resp.json()
+
+    # One SELECT: pull every character this user already has.
+    existing_res = await db.execute(
+        select(Character).where(Character.user_id == user.id)
+    )
+    existing_by_key: dict[tuple[str, str], Character] = {
+        (c.name, c.realm): c for c in existing_res.scalars().all()
+    }
+
+    now = datetime.now(timezone.utc)
     characters: list[Character] = []
     for account in data.get("wow_accounts", []):
         for c in account.get("characters", []):
             realm_slug = c.get("realm", {}).get("slug") or c.get("realm", {}).get("name", "")
             name = c.get("name", "")
-            existing_res = await db.execute(
-                select(Character).where(
-                    Character.user_id == user.id,
-                    Character.name == name,
-                    Character.realm == realm_slug,
-                )
-            )
-            character = existing_res.scalar_one_or_none()
+            if not name or not realm_slug:
+                continue
+
+            character = existing_by_key.get((name, realm_slug))
             if character is None:
                 character = Character(user_id=user.id, name=name, realm=realm_slug)
                 db.add(character)
+
             character.level = c.get("level")
             character.class_ = c.get("playable_class", {}).get("name")
             character.race = c.get("playable_race", {}).get("name")
             character.faction = c.get("faction", {}).get("type")
             character.region = region
-            character.last_synced_at = datetime.now(timezone.utc)
+            character.last_synced_at = now
             characters.append(character)
+
     await db.commit()
-    for ch in characters:
-        await db.refresh(ch)
+    # Skip per-character db.refresh() — callers don't need server-generated
+    # values beyond the PK (which SQLAlchemy sets after flush) and waiting
+    # for 50× round-trips to re-read every row is the hot path.
     return characters
 
 

@@ -26,7 +26,7 @@ Read CLAUDE.md for project context.
 Read docs/progress.md — Phase 1 is now complete.
 Read docs/phase-Y-tasks.md — we are starting Phase Y.
 
-Begin with TASK 2.1. Verify acceptance criteria before 
+Begin with TASK 6.1 and after 7.1. Verify acceptance criteria before 
 moving to the next task. Update docs/progress.md after 
 each completed task.
 

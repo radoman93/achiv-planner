@@ -3,7 +3,13 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# Secrets / env
 .env
+.env.local
+*.env
+!*.env.example
+!.env.example
 
 # Node / Next.js
 node_modules/
@@ -17,6 +23,11 @@ Thumbs.db
 
 # Raw scraped content
 raw_storage/
+/raw_storage/
+
+# DB backups
+/backups/
+*.sql.gz
 
 # Celery Beat runtime state
 celerybeat-schedule
@@ -24,3 +35,4 @@ celerybeat-schedule.*
 
 # SSL
 nginx/ssl/*.pem
+.idea/

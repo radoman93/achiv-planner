@@ -8,14 +8,21 @@ from app.core.config import settings
 
 def _make_engine():
     """Create a fresh async engine safe for the current event loop."""
+    connect_args = {}
+    # Disable SSL for local dev — Coolify Postgres serves plaintext
+    if settings.ENVIRONMENT == "development":
+        connect_args["ssl"] = False
+
     return create_async_engine(
         settings.DATABASE_URL,
         echo=False,
         future=True,
-        pool_pre_ping=False,
-        pool_size=5,
-        max_overflow=10,
-        pool_recycle=300,
+        pool_pre_ping=True,  # verify connections before checkout
+        pool_size=10,
+        max_overflow=20,
+        pool_timeout=30,
+        pool_recycle=1800,  # recycle every 30 minutes
+        connect_args=connect_args,
     )
 
 

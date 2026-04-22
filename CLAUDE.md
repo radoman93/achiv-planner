@@ -164,7 +164,7 @@ LLM enrichment extracts structured data — it does NOT make routing decisions.
 
 ## Current Phase
 **Update this line every time you start a new session.**
-Phase: 5 — Frontend (COMPLETE)
-Current Task: Phase 5 complete — ready for Phase 6
-Last completed: All 9 frontend tasks (5.1–5.9) implemented (2026-04-21)
+Phase: 7 — Hardening & Deployment (COMPLETE)
+Current Task: All phases complete — product is production-ready
+Last completed: Phase 6 (6.1–6.3 background jobs) + Phase 7 (7.1–7.5 hardening) on 2026-04-21
 See docs/progress.md for full status.

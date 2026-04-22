@@ -1,3 +1,4 @@
+import asyncio
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -10,11 +11,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.auth import _set_auth_cookies
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.redis import get_redis
+from app.core.logging import logger
+from app.core.redis import get_redis, get_redis_client
 from app.models.user import User
 from app.services import battlenet as bnet
+from app.services.sync_service import enqueue_character_sync
 
 router = APIRouter()
+
+CHARACTER_LIST_TIMEOUT_SECONDS = 15
 
 STATE_TTL_SECONDS = 600
 VALID_REGIONS = {"us", "eu", "kr", "tw"}
@@ -70,10 +75,49 @@ async def battlenet_callback(
     await db.commit()
     await db.refresh(user)
 
+    characters: list = []
     try:
-        await bnet.fetch_character_list(user, region, db)
-    except Exception:
-        pass
+        characters = await asyncio.wait_for(
+            bnet.fetch_character_list(user, region, db),
+            timeout=CHARACTER_LIST_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "battlenet.callback.character_list_timeout",
+            user_id=str(user.id),
+            timeout=CHARACTER_LIST_TIMEOUT_SECONDS,
+        )
+    except Exception as exc:
+        logger.warning(
+            "battlenet.callback.character_list_failed",
+            user_id=str(user.id),
+            error=str(exc),
+        )
+
+    if characters:
+        sync_redis = get_redis_client()
+        try:
+            for char in characters:
+                try:
+                    acquired, job_id = await enqueue_character_sync(
+                        char.id, user.id, sync_redis
+                    )
+                    if acquired:
+                        logger.info(
+                            "battlenet.callback.sync_enqueued",
+                            user_id=str(user.id),
+                            character_id=str(char.id),
+                            job_id=job_id,
+                        )
+                except Exception as exc:
+                    logger.warning(
+                        "battlenet.callback.sync_enqueue_failed",
+                        user_id=str(user.id),
+                        character_id=str(char.id),
+                        error=str(exc),
+                    )
+        finally:
+            await sync_redis.aclose()
 
     redirect_path = "/onboarding" if is_new else "/dashboard"
     response = RedirectResponse(url=f"{settings.FRONTEND_URL}{redirect_path}")

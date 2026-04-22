@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from statistics import mean
 from uuid import UUID
 
@@ -30,6 +31,10 @@ CONFIDENCE_TIERS = [
     (0.0, "research_required"),
 ]
 
+# Comment types eligible for "community tips"
+COMMUNITY_TIP_TYPES = ("route_tip", "correction", "time_estimate")
+COMMUNITY_TIPS_PER_STOP = 3
+
 
 def _confidence_tier(score: float) -> str:
     for threshold, tier in CONFIDENCE_TIERS:
@@ -51,6 +56,18 @@ class RouteAssembler:
         seasonal_result: SeasonalResult,
         db: AsyncSession,
     ) -> Route:
+        import time as _time
+        _t0 = _time.perf_counter()
+
+        def _mark(label: str) -> None:
+            nonlocal _t0
+            logger.info(
+                "route_assembler.%s took %.0fms",
+                label,
+                (_time.perf_counter() - _t0) * 1000,
+            )
+            _t0 = _time.perf_counter()
+
         # 1. Build Route record
         all_stop_minutes = sum(s.estimated_minutes for s in sessions)
         seasonal_minutes = sum(
@@ -58,7 +75,6 @@ class RouteAssembler:
         )
         total_minutes = all_stop_minutes + seasonal_minutes
 
-        # Collect all confidence scores for overall average
         all_scores: list[float] = []
         for session in sessions:
             for stop in session.stops:
@@ -75,60 +91,105 @@ class RouteAssembler:
             status="active",
             total_estimated_minutes=total_minutes,
             overall_confidence=overall_confidence,
-            session_duration_minutes=None,  # set by caller if needed
+            session_duration_minutes=None,
             solo_only=None,
         )
         db.add(route)
-        await db.flush()  # get route.id
+        await db.flush()  # need route.id for FK on stops
+        _mark("insert_route")
 
-        # 2. Build seasonal block stops (session_number = 0)
+        # 2. Pre-fetch best guide + community tips for every achievement in one query each
+        achievement_ids: set[UUID] = set()
+        for ss in seasonal_result.active_block:
+            achievement_ids.add(ss.achievement.id)
+        for session in sessions:
+            for stop in session.stops:
+                achievement_ids.add(stop.achievement.id)
+
+        best_guide_by_ach = await self._load_best_guides(db, achievement_ids)
+        _mark(f"load_best_guides[{len(best_guide_by_ach)}/{len(achievement_ids)}]")
+        tips_by_ach = await self._load_community_tips(db, achievement_ids)
+        _mark(f"load_community_tips[{len(tips_by_ach)}]")
+
+        # 3. Build seasonal block stops (session_number = 0)
+        pending_stops: list[RouteStop] = []
+        stop_guide_pairs: list[tuple[RouteStop, Guide | None]] = []
+
         seq = 0
         for ss in seasonal_result.active_block:
-            await self._create_stop(
-                db=db,
+            stop = self._build_stop(
                 route_id=route.id,
                 achievement=ss.achievement,
                 session_number=0,
                 sequence_order=seq,
                 is_seasonal=True,
                 days_remaining=ss.days_remaining,
+                best_guide=best_guide_by_ach.get(ss.achievement.id),
+                tips=tips_by_ach.get(ss.achievement.id),
             )
+            pending_stops.append(stop)
+            stop_guide_pairs.append((stop, best_guide_by_ach.get(ss.achievement.id)))
             seq += 1
 
-        # 3. Build main route stops
+        # 4. Build main route stops
         for session in sessions:
-            for stop in session.stops:
-                await self._create_stop(
-                    db=db,
+            for stop_meta in session.stops:
+                stop = self._build_stop(
                     route_id=route.id,
-                    achievement=stop.achievement,
-                    session_number=stop.session_number,
-                    sequence_order=stop.sequence_order,
+                    achievement=stop_meta.achievement,
+                    session_number=stop_meta.session_number,
+                    sequence_order=stop_meta.sequence_order,
                     is_seasonal=False,
                     days_remaining=None,
+                    best_guide=best_guide_by_ach.get(stop_meta.achievement.id),
+                    tips=tips_by_ach.get(stop_meta.achievement.id),
+                )
+                pending_stops.append(stop)
+                stop_guide_pairs.append(
+                    (stop, best_guide_by_ach.get(stop_meta.achievement.id))
                 )
 
-        # 4. Build blocked pool
-        blocked_entries = []
-        for ba in filter_result.blocked:
-            blocked_entries.append(
-                {
-                    "achievement_id": str(ba.achievement.id),
-                    "achievement_name": ba.achievement.name,
-                    "reason": ba.reason.value,
-                    "unlocker": ba.unlocker,
-                }
-            )
-        route.blocked_pool = blocked_entries
-
+        # 5. Bulk-add stops, one flush to populate IDs
+        db.add_all(pending_stops)
         await db.flush()
+        _mark(f"insert_stops[{len(pending_stops)}]")
 
-        # 5. Attach community tips to stops
-        await self._attach_community_tips(db, route.id)
+        # 6. Build RouteSteps for stops that have guides with steps JSON
+        pending_steps: list[RouteStep] = []
+        for stop, guide in stop_guide_pairs:
+            if guide and guide.steps and isinstance(guide.steps, list):
+                for idx, step_data in enumerate(guide.steps):
+                    pending_steps.append(
+                        RouteStep(
+                            route_stop_id=stop.id,
+                            sequence_order=idx,
+                            description=step_data.get(
+                                "label", step_data.get("description", "")
+                            ),
+                            step_type=step_data.get("type", "action"),
+                            location=step_data.get("zone", step_data.get("location")),
+                            source_reference=guide.source_url,
+                        )
+                    )
+        if pending_steps:
+            db.add_all(pending_steps)
+        _mark(f"insert_steps[{len(pending_steps)}]")
+
+        # 7. Build blocked pool
+        route.blocked_pool = [
+            {
+                "achievement_id": str(ba.achievement.id),
+                "achievement_name": ba.achievement.name,
+                "reason": ba.reason.value,
+                "unlocker": ba.unlocker,
+            }
+            for ba in filter_result.blocked
+        ]
 
         await db.commit()
+        _mark("commit")
 
-        # 6. Return fully populated Route
+        # 8. Return fully populated Route
         result = await db.execute(
             select(Route)
             .where(Route.id == route.id)
@@ -140,6 +201,7 @@ class RouteAssembler:
             )
         )
         route = result.scalar_one()
+        _mark("reload")
 
         logger.info(
             "Route assembled: id=%s, %d stops, %d minutes, confidence=%.2f",
@@ -151,23 +213,79 @@ class RouteAssembler:
         return route
 
     # ------------------------------------------------------------------
-    # Stop creation
+    # Bulk loaders (one query each regardless of stop count)
     # ------------------------------------------------------------------
 
-    async def _create_stop(
+    async def _load_best_guides(
+        self, db: AsyncSession, achievement_ids: set[UUID]
+    ) -> dict[UUID, Guide]:
+        """Return {achievement_id: guide_with_highest_confidence} in one query."""
+        if not achievement_ids:
+            return {}
+        result = await db.execute(
+            select(Guide)
+            .where(Guide.achievement_id.in_(achievement_ids))
+            .order_by(
+                Guide.achievement_id,
+                Guide.confidence_score.desc().nullslast(),
+            )
+        )
+        best: dict[UUID, Guide] = {}
+        for guide in result.scalars().all():
+            # ORDER BY ensures the first row per achievement_id is the best
+            if guide.achievement_id not in best:
+                best[guide.achievement_id] = guide
+        return best
+
+    async def _load_community_tips(
+        self, db: AsyncSession, achievement_ids: set[UUID]
+    ) -> dict[UUID, list[dict]]:
+        """Return {achievement_id: [top-N tip dicts]} in one query."""
+        if not achievement_ids:
+            return {}
+        result = await db.execute(
+            select(Comment)
+            .where(
+                Comment.achievement_id.in_(achievement_ids),
+                Comment.comment_type.in_(COMMUNITY_TIP_TYPES),
+            )
+            .order_by(
+                Comment.achievement_id,
+                Comment.combined_score.desc().nullslast(),
+            )
+        )
+        grouped: dict[UUID, list[dict]] = defaultdict(list)
+        for comment in result.scalars().all():
+            bucket = grouped[comment.achievement_id]
+            if len(bucket) >= COMMUNITY_TIPS_PER_STOP:
+                continue
+            bucket.append(
+                {
+                    "author": comment.author,
+                    "text": comment.raw_text[:500] if comment.raw_text else "",
+                    "score": comment.combined_score,
+                    "type": comment.comment_type,
+                }
+            )
+        return dict(grouped)
+
+    # ------------------------------------------------------------------
+    # Stop construction (no DB I/O — caller bulk-adds)
+    # ------------------------------------------------------------------
+
+    def _build_stop(
         self,
-        db: AsyncSession,
+        *,
         route_id: UUID,
         achievement: Achievement,
         session_number: int,
         sequence_order: int,
         is_seasonal: bool,
         days_remaining: int | None,
+        best_guide: Guide | None,
+        tips: list[dict] | None,
     ) -> RouteStop:
-        # Find best guide
-        guide = await self._best_guide(db, achievement.id)
-
-        stop = RouteStop(
+        return RouteStop(
             route_id=route_id,
             achievement_id=achievement.id,
             session_number=session_number,
@@ -175,67 +293,8 @@ class RouteAssembler:
             zone_id=achievement.zone_id,
             estimated_minutes=achievement.estimated_minutes,
             confidence_tier=_confidence_tier(achievement.confidence_score),
-            guide_id=guide.id if guide else None,
+            guide_id=best_guide.id if best_guide else None,
             is_seasonal=is_seasonal,
             days_remaining=days_remaining,
+            community_tips=tips if tips else None,
         )
-        db.add(stop)
-        await db.flush()
-
-        # Create RouteSteps from guide.steps JSON
-        if guide and guide.steps and isinstance(guide.steps, list):
-            for idx, step_data in enumerate(guide.steps):
-                step = RouteStep(
-                    route_stop_id=stop.id,
-                    sequence_order=idx,
-                    description=step_data.get("label", step_data.get("description", "")),
-                    step_type=step_data.get("type", "action"),
-                    location=step_data.get("zone", step_data.get("location")),
-                    source_reference=guide.source_url,
-                )
-                db.add(step)
-
-        return stop
-
-    async def _best_guide(self, db: AsyncSession, achievement_id: UUID) -> Guide | None:
-        result = await db.execute(
-            select(Guide)
-            .where(Guide.achievement_id == achievement_id)
-            .order_by(Guide.confidence_score.desc().nullslast())
-            .limit(1)
-        )
-        return result.scalar_one_or_none()
-
-    # ------------------------------------------------------------------
-    # Community tips
-    # ------------------------------------------------------------------
-
-    async def _attach_community_tips(self, db: AsyncSession, route_id: UUID) -> None:
-        """Fetch top 3 relevant comments for each stop and store as JSON."""
-        result = await db.execute(
-            select(RouteStop).where(RouteStop.route_id == route_id)
-        )
-        stops = result.scalars().all()
-
-        for stop in stops:
-            comments_result = await db.execute(
-                select(Comment)
-                .where(
-                    Comment.achievement_id == stop.achievement_id,
-                    Comment.comment_type.in_(["route_tip", "correction", "time_estimate"]),
-                )
-                .order_by(Comment.combined_score.desc().nullslast())
-                .limit(3)
-            )
-            comments = comments_result.scalars().all()
-
-            if comments:
-                stop.community_tips = [
-                    {
-                        "author": c.author,
-                        "text": c.raw_text[:500] if c.raw_text else "",
-                        "score": c.combined_score,
-                        "type": c.comment_type,
-                    }
-                    for c in comments
-                ]

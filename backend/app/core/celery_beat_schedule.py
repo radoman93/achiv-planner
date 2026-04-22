@@ -7,9 +7,9 @@ beat_schedule = {
         "options": {"queue": "normal"},
     },
     "scrape-coordinator": {
-        "task": "pipeline.orchestrator.scrape_coordinator",
+        "task": "pipeline.scrape.coordinate",
         "schedule": crontab(minute=0, hour="*/6"),
-        "options": {"queue": "normal"},
+        "options": {"queue": "high_priority"},
     },
     "patch-monitor": {
         "task": "pipeline.orchestrator.patch_monitor",
@@ -17,8 +17,8 @@ beat_schedule = {
         "options": {"queue": "normal"},
     },
     "seasonal-window-monitor": {
-        "task": "pipeline.orchestrator.seasonal_window_monitor",
+        "task": "pipeline.seasonal.monitor",
         "schedule": crontab(hour=6, minute=0),
-        "options": {"queue": "normal"},
+        "options": {"queue": "high_priority"},
     },
 }

@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 VALID_MODES = {"completionist", "points_per_hour", "goal_driven", "seasonal_first"}
 FREE_TIER_DAILY_LIMIT = 5
+PRO_TIER_DAILY_LIMIT = 50
 
 
 def _ok(data):
@@ -144,22 +145,23 @@ async def _get_owned_route(
     return route
 
 
+def _daily_limit_for(user: User) -> int:
+    return PRO_TIER_DAILY_LIMIT if user.tier == "pro" else FREE_TIER_DAILY_LIMIT
+
+
 async def _check_rate_limit(user: User) -> None:
-    if user.tier != "free":
-        return
+    limit = _daily_limit_for(user)
     redis = get_redis_client()
     try:
         key = f"rate:routes:{user.id}:{date.today().isoformat()}"
         count = await redis.get(key)
-        if count and int(count) >= FREE_TIER_DAILY_LIMIT:
-            raise HTTPException(429, f"free tier limit: {FREE_TIER_DAILY_LIMIT} route generations per day")
+        if count and int(count) >= limit:
+            raise HTTPException(429, f"{user.tier} tier limit: {limit} route generations per day")
     finally:
         await redis.aclose()
 
 
 async def _increment_rate_limit(user: User) -> None:
-    if user.tier != "free":
-        return
     redis = get_redis_client()
     try:
         key = f"rate:routes:{user.id}:{date.today().isoformat()}"
@@ -187,6 +189,14 @@ async def generate_route(
     user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
+    import time as _time
+    _t_start = _time.perf_counter()
+
+    def _step(label: str, t0: float) -> float:
+        elapsed_ms = (_time.perf_counter() - t0) * 1000
+        logger.info("route.generate.%s took %.0fms", label, elapsed_ms)
+        return _time.perf_counter()
+
     if body.mode not in VALID_MODES:
         raise HTTPException(422, f"mode must be one of: {', '.join(sorted(VALID_MODES))}")
 
@@ -200,6 +210,30 @@ async def generate_route(
     character = char_result.scalar_one_or_none()
     if not character:
         raise HTTPException(404, "character not found")
+
+    _t = _step("load_character", _t_start)
+
+    # Guardrail: a Battle.net-connected user whose character has no
+    # achievement-state rows hasn't synced yet — generating a route here
+    # would silently include already-earned achievements.
+    if user.battlenet_token:
+        state_probe = await db.execute(
+            select(UserAchievementState.id)
+            .where(UserAchievementState.character_id == body.character_id)
+            .limit(1)
+        )
+        if state_probe.scalar_one_or_none() is None:
+            raise HTTPException(
+                409,
+                detail={
+                    "error": "character_not_synced",
+                    "character_id": str(body.character_id),
+                    "message": (
+                        "This character has not been synced with Battle.net yet. "
+                        "Trigger a sync before generating a route."
+                    ),
+                },
+            )
 
     # Rate limit check
     await _check_rate_limit(user)
@@ -242,6 +276,8 @@ async def generate_route(
     if not achievements:
         raise HTTPException(400, "no eligible achievements found for this character")
 
+    _t = _step(f"load_achievements[{len(achievements)}]", _t)
+
     # Load dependencies
     deps_result = await db.execute(select(AchievementDependency))
     all_deps = list(deps_result.scalars().all())
@@ -249,6 +285,8 @@ async def generate_route(
     # Load zones
     zones_result = await db.execute(select(Zone))
     all_zones = list(zones_result.scalars().all())
+
+    _t = _step(f"load_deps_and_zones[deps={len(all_deps)},zones={len(all_zones)}]", _t)
 
     # Run routing pipeline
     from app.router_engine.constraint_filter import ConstraintFilter
@@ -261,25 +299,28 @@ async def generate_route(
 
     # 1. Constraint filter
     filter_result = ConstraintFilter().filter(achievements, character, solo_only=solo_only)
+    _t = _step("constraint_filter", _t)
 
     # 2. Dependency resolver
     resolved_order = DependencyResolver().resolve(filter_result.eligible, all_deps)
+    _t = _step("dependency_resolver", _t)
 
     # 3. Zone graph
     redis = get_redis_client()
     try:
         zone_graph = ZoneGraph(redis)
         await zone_graph.build_graph(all_zones, character)
+        _t = _step("zone_graph", _t)
 
         # 4. Geographic clusterer
         clusters = await GeographicClusterer().cluster(
             resolved_order, character, zone_graph
         )
+        _t = _step(f"clusterer[{len(clusters)}]", _t)
     finally:
         await redis.aclose()
 
     # 5. Session structurer
-    # Load partial progress
     partial_result = await db.execute(
         select(UserAchievementState).where(
             UserAchievementState.character_id == body.character_id,
@@ -301,6 +342,7 @@ async def generate_route(
         user.session_duration_minutes,
         partially_completed,
     )
+    _t = _step(f"session_structurer[{len(sessions)}]", _t)
 
     # 6. Seasonal override
     completed_ids_result = await db.execute(
@@ -317,6 +359,7 @@ async def generate_route(
         current_date=date.today(),
         completed_ids=completed_ids,
     )
+    _t = _step("seasonal_override", _t)
 
     # 7. Assemble
     route = await RouteAssembler().assemble(
@@ -328,14 +371,21 @@ async def generate_route(
         seasonal_result=seasonal_result,
         db=db,
     )
+    _t = _step(f"route_assembler[stops={sum(len(s.stops) for s in sessions)}]", _t)
 
     # Increment rate limit
     await _increment_rate_limit(user)
 
     # Re-fetch with eager loads for serialization
     route = await _get_owned_route(route.id, user, db)
+    _t = _step("reload_for_serialize", _t)
 
-    return _ok(_serialize_route(route))
+    payload = _ok(_serialize_route(route))
+    logger.info(
+        "route.generate.total took %.0fms",
+        (_time.perf_counter() - _t_start) * 1000,
+    )
+    return payload
 
 
 # ---------------------------------------------------------------------------

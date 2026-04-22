@@ -5,6 +5,9 @@ import app.pipeline.orchestrator  # noqa: F401
 import app.pipeline.comment_processor  # noqa: F401
 import app.pipeline.llm_enrichment  # noqa: F401
 import app.pipeline.patch_monitor  # noqa: F401
+import app.pipeline.sync_tasks  # noqa: F401
+import app.pipeline.scrape_coordinator  # noqa: F401
+import app.pipeline.seasonal_monitor  # noqa: F401
 import app.scraper.wowhead_scraper  # noqa: F401
 import app.scraper.spiders.orchestrator  # noqa: F401
 

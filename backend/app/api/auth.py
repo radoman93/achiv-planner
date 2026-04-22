@@ -1,6 +1,6 @@
 from typing import Optional
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +14,7 @@ from app.core.auth import (
 )
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.rate_limiter import limiter
 from app.models.user import User
 
 router = APIRouter()
@@ -62,7 +63,8 @@ def _set_auth_cookies(response: Response, user_id):
 
 
 @router.post("/register", response_model=UserPublic, status_code=201)
-async def register(body: RegisterBody, response: Response, db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/minute")
+async def register(request: Request, body: RegisterBody, response: Response, db: AsyncSession = Depends(get_db)):
     existing = await db.execute(select(User).where(User.email == body.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="email already registered")
@@ -75,7 +77,8 @@ async def register(body: RegisterBody, response: Response, db: AsyncSession = De
 
 
 @router.post("/login", response_model=UserPublic)
-async def login(body: LoginBody, response: Response, db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/minute")
+async def login(request: Request, body: LoginBody, response: Response, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
     if not user or not user.hashed_password or not verify_password(body.password, user.hashed_password):

@@ -7,6 +7,13 @@ volumes:
   redis_data:
   raw_storage:
 
+x-log-rotate: &log-rotate
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "100m"
+      max-file: "5"
+
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -24,6 +31,7 @@ services:
       retries: 10
     networks:
       - wow_optimizer_network
+    <<: *log-rotate
 
   redis:
     image: redis:7-alpine
@@ -38,6 +46,7 @@ services:
       retries: 10
     networks:
       - wow_optimizer_network
+    <<: *log-rotate
 
   backend:
     build:
@@ -55,6 +64,7 @@ services:
       - raw_storage:/raw_storage
     networks:
       - wow_optimizer_network
+    <<: *log-rotate
 
   celery-worker:
     build:
@@ -77,6 +87,7 @@ services:
       - raw_storage:/raw_storage
     networks:
       - wow_optimizer_network
+    <<: *log-rotate
 
   celery-beat:
     build:
@@ -93,6 +104,7 @@ services:
         condition: service_healthy
     networks:
       - wow_optimizer_network
+    <<: *log-rotate
 
   flower:
     build:
@@ -110,6 +122,7 @@ services:
         condition: service_healthy
     networks:
       - wow_optimizer_network
+    <<: *log-rotate
 
   frontend:
     build:
@@ -122,6 +135,7 @@ services:
       - backend
     networks:
       - wow_optimizer_network
+    <<: *log-rotate
 
   nginx:
     image: nginx:alpine
@@ -137,3 +151,4 @@ services:
       - backend
     networks:
       - wow_optimizer_network
+    <<: *log-rotate

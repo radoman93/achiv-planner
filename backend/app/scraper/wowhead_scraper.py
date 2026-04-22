@@ -440,21 +440,33 @@ def scrape_wowhead_task(self, achievement_id: int) -> dict:
     if result is None:
         return {"achievement_id": achievement_id, "status": "skipped_or_not_found"}
 
-    # Look up the DB UUID and mark as scraped
+    # Look up the DB UUID, mark as scraped, reset staleness score
     async def _get_uuid_and_mark():
         from sqlalchemy import select as sa_select
         from app.core.database import AsyncSessionLocal
+        from app.core.redis import get_redis_client
         from app.models.achievement import Achievement
+        from app.pipeline.scrape_coordinator import unmark_queued
         from datetime import datetime, timezone
         async with AsyncSessionLocal() as session:
             ach = (await session.execute(
                 sa_select(Achievement).where(Achievement.blizzard_id == achievement_id)
             )).scalar_one_or_none()
             if ach is None:
-                return None
-            ach.last_scraped_at = datetime.now(timezone.utc)
-            await session.commit()
-            return str(ach.id)
+                uuid_str = None
+            else:
+                ach.last_scraped_at = datetime.now(timezone.utc)
+                ach.staleness_score = 0.0
+                await session.commit()
+                uuid_str = str(ach.id)
+        # Always clear the in-flight marker on task completion, even if the
+        # achievement row vanished between dispatch and scrape.
+        r = get_redis_client()
+        try:
+            await unmark_queued(r, achievement_id)
+        finally:
+            await r.aclose()
+        return uuid_str
 
     ach_uuid = asyncio.run(_get_uuid_and_mark())
 

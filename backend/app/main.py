@@ -2,15 +2,25 @@ import structlog
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
 
 from app.api.health import router as health_router
 from app.core.config import settings
 from app.core.database import check_db_health
 from app.core.logging import configure_logging
 from app.core.middleware import RequestIDMiddleware, RequestLoggingMiddleware
+from app.core.rate_limiter import limiter, rate_limit_exceeded_handler
 from app.core.redis import check_redis_health
+from app.core.security_headers import (
+    PayloadSizeLimitMiddleware,
+    SecurityHeadersMiddleware,
+)
+from app.core.sentry import init_sentry
+from app.core.startup_validator import validate_startup_config
 
 configure_logging()
+validate_startup_config()
+init_sentry()
 logger = structlog.get_logger()
 
 app = FastAPI(
@@ -19,15 +29,28 @@ app = FastAPI(
     version=settings.VERSION,
 )
 
+# Allowed origins:
+#   production: only the configured FRONTEND_URL
+#   development: FRONTEND_URL + localhost:3000/3001 for local frontend dev
+cors_origins = [settings.FRONTEND_URL]
+if settings.ENVIRONMENT == "development":
+    cors_origins.extend(["http://localhost:3000", "http://localhost:3001"])
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.FRONTEND_URL],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(PayloadSizeLimitMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(RequestIDMiddleware)
+
+# slowapi wiring
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 
 @app.exception_handler(Exception)

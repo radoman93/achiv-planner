@@ -6,7 +6,7 @@ from datetime import date
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Query
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import Integer as SAInteger, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +14,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.auth import get_current_user, verify_token
 from app.core.database import get_db
+from app.core.rate_limiter import limiter
 from app.models.achievement import Achievement, AchievementCriteria, AchievementDependency
 from app.models.content import Comment, Guide
 from app.models.progress import UserAchievementState
@@ -65,7 +66,9 @@ def _ach_summary(a: Achievement) -> dict:
 # ---------------------------------------------------------------------------
 
 @router.get("")
+@limiter.limit("100/minute")
 async def list_achievements(
+    request: Request,
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     expansion: Optional[str] = None,
@@ -153,8 +156,10 @@ async def list_achievements(
 # ---------------------------------------------------------------------------
 
 @router.get("/search")
+@limiter.limit("60/minute")
 async def search_achievements(
-    q: str = Query(..., min_length=2),
+    request: Request,
+    q: str = Query(..., min_length=2, max_length=200),
     limit: int = Query(10, ge=1, le=50),
     db: AsyncSession = Depends(get_db),
 ):

@@ -1,14 +1,5 @@
-  What you do now (in order)
-
-  1. console.anthropic.com → Settings → Limits → monthly spend cap $25, alerts at $5/$10/$20.
-  2. Copy backend/.env.example to backend/.env, paste your sk-ant-... key. Leave LLM_ENRICHMENT_ENABLED=false and LLM_ENRICHMENT_MODE=dry_run.
-  3. Run the pipeline. Zero spend — dry-run logs prompts to stdout/Sentry for you to inspect.
-  4. Switch to LLM_ENRICHMENT_MODE=sample, set LLM_ENRICHMENT_ENABLED=true, run again. Spends ~$0.05 on 5 hand-picked IDs. Verify spend in console matches logged
-   cumulative_total_usd.
-  5. Flip LLM_ENRICHMENT_MODE=live, trigger a 500-achievement batch. Spends ~$1.50. Spot-check Guide rows.
-  6. If clean, let the full run complete (~$10–15 via Batch + Haiku).
-  7. Steady-state after that: ~$2–3/month on patch deltas.
-
-  Emergency stop anytime: redis-cli set llm:kill_switch 1.
-
-  Budget tests: pytest backend/tests/test_llm_budget.py — verifies pricing math, cached-token discount, batch discount, and hard-stop short-circuit.
+  Next steps (when the dry-run completes):
+  - Verify achievements populated in DB
+  - Switch LLM_ENRICHMENT_ENABLED=true + LLM_ENRICHMENT_MODE=sample → ~$0.05 test
+  - Then live mode for 500 achievements → ~$1.50
+  - Then full run → ~$10-15

@@ -237,7 +237,7 @@ export default function OnboardingPage() {
                     </div>
                     <div>
                       <label className="block text-sm text-text-secondary mb-1">Level</label>
-                      <input type="number" min={1} max={80} value={manualLevel} onChange={(e) => setManualLevel(Number(e.target.value))} className="w-full bg-surface-elevated border border-border rounded px-3 py-2 text-text-primary focus:outline-none focus:border-primary" />
+                      <input type="number" min={1} max={90} value={manualLevel} onChange={(e) => setManualLevel(Number(e.target.value))} className="w-full bg-surface-elevated border border-border rounded px-3 py-2 text-text-primary focus:outline-none focus:border-primary" />
                     </div>
                   </div>
                   <button
